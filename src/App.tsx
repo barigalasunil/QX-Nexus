@@ -3,10 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+// RULE: Never use alert(), prompt(), or confirm() anywhere in this app.
+// All user interactions must use in-app modals or toast notifications.
+// Browser dialogs break the UI experience and cannot be styled.
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { getTheme, commonStyles } from './theme';
 import { AppState, AuditLogEntry, User } from './types';
-import { formatTime, getEffectivePermissions, getPermissionsForRole, hashPassword, isPasswordHash, scopeAppStateForUser } from './utils';
+import { formatTime, generateId, getEffectivePermissions, getPermissionsForRole, hashPassword, isPasswordHash, scopeAppStateForUser, sendEmailJS, maskEmail, getCurrentWeekRange, computeWeekMetrics } from './utils';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { DataEntry } from './components/DataEntry';
@@ -16,6 +20,10 @@ import { Timesheet } from './components/Timesheet';
 import { TeamStructure } from './components/TeamStructure';
 import { Export } from './components/Export';
 import { Settings } from './components/Settings';
+import { Announcements } from './components/Announcements';
+import { LeaveRequests } from './components/LeaveRequests';
+import { BackupRestore } from './components/BackupRestore';
+import { BulkImport } from './components/BulkImport';
 import { Toast } from './components/Shared';
 import { Bell, HelpCircle, UserCheck, X } from 'lucide-react';
 
@@ -29,6 +37,7 @@ const INITIAL_APP_STATE: AppState = {
     {
       id: 'superadmin',
       username: 'superadmin',
+      email: '',
       password: 'e34f92a20532a873cb3184398070b4b82a8fa29cf48572c203dc5f0fa6158231',
       role: 'superadmin',
       squadId: null,
@@ -69,6 +78,22 @@ const INITIAL_APP_STATE: AppState = {
   customFields: [],
   auditLog: [],
   notifications: [],
+  announcements: [],
+  leaveRequests: [],
+  backupMetadata: [],
+  emailConfig: {
+    enabled: false,
+    publicKey: '',
+    serviceId: '',
+    appUrl: '',
+    templates: {
+      welcome: '',
+      weeklySummary: '',
+    },
+    senderName: 'QA Hub',
+    replyTo: '',
+  },
+  emailLog: [],
 };
 
 export default function App() {
@@ -128,11 +153,12 @@ export default function App() {
           parsed.users.unshift(INITIAL_APP_STATE.users[0]);
         }
 
-        // Migration to back-fill permissions
+        // Migration to back-fill permissions and email
         parsed.users = parsed.users.map((u: any) => {
           const role = u.role === 'superadmin' ? 'superadmin' : u.role;
           return {
             ...u,
+            email: u.email ?? '',
             projectId: role === 'superadmin' ? null : (u.projectId ?? null),
             squadId: role === 'superadmin' || role === 'admin' ? null : (u.squadId ?? null),
             permissions: role === 'superadmin'
@@ -235,6 +261,68 @@ export default function App() {
           read: notification.read ?? false,
           createdAt: notification.createdAt || new Date().toISOString(),
           type: notification.type || 'system',
+        }));
+        parsed.announcements = (parsed.announcements || []).map((a: any) => ({
+          id: a.id || generateId(),
+          title: a.title || 'Announcement',
+          message: a.message || '',
+          type: ['info', 'warning', 'success', 'alert'].includes(a.type) ? a.type : 'info',
+          postedBy: a.postedBy || 'Unknown',
+          postedByName: a.postedByName || 'Unknown',
+          postedAt: a.postedAt || new Date().toISOString(),
+          expiresAt: a.expiresAt || null,
+          targetRoles: a.targetRoles || ['superadmin', 'admin', 'lead', 'member', 'guest'],
+          projectId: a.projectId ?? null,
+        }));
+        parsed.leaveRequests = (parsed.leaveRequests || []).map((lr: any) => ({
+          id: lr.id || generateId(),
+          userId: lr.userId || '',
+          userName: lr.userName || '',
+          startDate: lr.startDate || '',
+          endDate: lr.endDate || '',
+          type: ['Annual', 'Sick', 'Personal', 'Other'].includes(lr.type) ? lr.type : 'Annual',
+          reason: lr.reason || '',
+          status: ['pending', 'approved', 'rejected'].includes(lr.status) ? lr.status : 'pending',
+          approverId: lr.approverId ?? null,
+          approverName: lr.approverName ?? null,
+          approvedAt: lr.approvedAt ?? null,
+          createdAt: lr.createdAt || new Date().toISOString(),
+          reviewedBy: lr.reviewedBy ?? null,
+          rejectionReason: lr.rejectionReason ?? null,
+        }));
+        if (!parsed.emailConfig) {
+          parsed.emailConfig = { ...INITIAL_APP_STATE.emailConfig };
+        } else {
+          const ec = parsed.emailConfig;
+          parsed.emailConfig = {
+            enabled: ec.enabled ?? false,
+            publicKey: ec.publicKey || '',
+            serviceId: ec.serviceId || '',
+            appUrl: ec.appUrl || '',
+            templates: {
+              welcome: ec.templates?.welcome || '',
+              weeklySummary: ec.templates?.weeklySummary || '',
+            },
+            senderName: ec.senderName || 'QA Hub',
+            replyTo: ec.replyTo || '',
+          };
+        }
+        parsed.emailLog = (parsed.emailLog || []).map((el: any) => ({
+          id: el.id || generateId(),
+          sentAt: el.sentAt || new Date().toISOString(),
+          templateType: ['welcome', 'weeklySummary'].includes(el.templateType) ? el.templateType : 'welcome',
+          to: el.to || '',
+          toUsername: el.toUsername || '',
+          status: el.status === 'sent' ? 'sent' : 'failed',
+          errorReason: el.errorReason ?? null,
+        }));
+        parsed.backupMetadata = (parsed.backupMetadata || []).map((bm: any) => ({
+          id: bm.id || generateId(),
+          filename: bm.filename || 'backup.json',
+          createdAt: bm.createdAt || new Date().toISOString(),
+          version: bm.version || '4.0',
+          size: bm.size || 0,
+          createdBy: bm.createdBy || 'Unknown',
         }));
         parsed.holidays = (parsed.holidays || []).map((holiday: any) => ({
           ...holiday,
@@ -393,6 +481,82 @@ export default function App() {
   }, [toast]);
 
   useEffect(() => {
+    if (document.getElementById('emailjs-sdk')) return;
+    const script = document.createElement('script');
+    script.id = 'emailjs-sdk';
+    script.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js';
+    script.onload = () => {
+      const config = (JSON.parse(localStorage.getItem(STORE_KEY) || '{}')).emailConfig;
+      if ((window as any).emailjs && config?.publicKey) {
+        (window as any).emailjs.init({ publicKey: config.publicKey });
+      }
+    };
+    document.head.appendChild(script);
+  }, []);
+
+  useEffect(() => {
+    if ((window as any).emailjs && appState.emailConfig?.enabled && appState.emailConfig?.publicKey) {
+      (window as any).emailjs.init({ publicKey: appState.emailConfig.publicKey });
+    }
+  }, [appState.emailConfig]);
+
+  // Weekly Summary Friday trigger
+  useEffect(() => {
+    if (!migrationReady) return;
+    if (!appState.emailConfig?.enabled || !appState.emailConfig?.templates?.weeklySummary) return;
+    const today = new Date();
+    if (today.getDay() !== 5) return;
+    const alreadySent = sessionStorage.getItem('weeklySummaryEmailSent');
+    if (alreadySent === today.toDateString()) return;
+    const { weekStart, weekEnd, weekRange } = getCurrentWeekRange();
+    const recipients = appState.users.filter(u =>
+      (u.role === 'admin' || u.role === 'lead' || u.role === 'superadmin') && u.email
+    );
+    if (recipients.length === 0) return;
+    const metrics = computeWeekMetrics(appState, weekStart, weekEnd);
+    (async () => {
+      for (const user of recipients) {
+        const result = await sendEmailJS(
+          appState.emailConfig,
+          appState.emailConfig.templates.weeklySummary,
+          {
+            to_email: user.email,
+            to_name: user.username,
+            week_range: weekRange,
+            stories_tested: metrics.stories,
+            tc_created: metrics.tcCreated,
+            tc_executed: metrics.tcExecuted,
+            tc_passed: metrics.tcPassed,
+            tc_failed: metrics.tcFailed,
+            pass_rate: metrics.passRate + '%',
+            defects_raised: metrics.defects,
+            sit_misses: metrics.sitMisses,
+            p1_count: metrics.p1,
+            p2_count: metrics.p2,
+            p3_count: metrics.p3,
+            project_filter: 'All Projects',
+            squad_filter: 'All Squads',
+            generated_by: 'QA Hub (Automated)',
+          }
+        );
+        setAppState(prev => ({
+          ...prev,
+          emailLog: [{
+            id: generateId(),
+            sentAt: new Date().toISOString(),
+            templateType: 'weeklySummary' as const,
+            to: maskEmail(user.email),
+            toUsername: user.username,
+            status: result.success ? 'sent' as const : 'failed' as const,
+            errorReason: result.success ? null : (result.reason || null),
+          }, ...(prev.emailLog || [])].slice(0, 200),
+        }));
+      }
+      sessionStorage.setItem('weeklySummaryEmailSent', today.toDateString());
+    })();
+  }, [migrationReady, appState.emailConfig?.enabled]);
+
+  useEffect(() => {
     if (document.getElementById('qa-hub-animations')) return;
     const style = document.createElement('style');
     style.id = 'qa-hub-animations';
@@ -470,7 +634,7 @@ export default function App() {
       const passwordAgeDays = updatedUser.passwordChangedAt
         ? (Date.now() - new Date(updatedUser.passwordChangedAt).getTime()) / 86400000
         : 31;
-      setPasswordModal(updatedUser.mustChangePassword || (!updatedUser.mustChangePassword && passwordAgeDays > 30) ? 'forced' : updatedUser.loginCount % 5 === 0 ? 'periodic' : null);
+      setPasswordModal(updatedUser.mustChangePassword || (!updatedUser.mustChangePassword && passwordAgeDays > 30) ? 'forced' : null);
       // land page: dynamically choose the first accessible tab
       const targetTab = getFirstAccessibleTab(updatedUser);
       setCurrentTab(targetTab);
@@ -630,6 +794,8 @@ export default function App() {
 
     if (tabId === 'profile') return true;
     if (tabId === 'teamStructure') return currentUser.role !== 'member';
+    if (tabId === 'announcements') return currentUser.role === 'superadmin' || currentUser.role === 'admin';
+    if (tabId === 'leaveRequests') return currentUser.role !== 'guest';
 
     const permKey = keyMap[tabId];
     if (!permKey) return true;
@@ -679,7 +845,7 @@ export default function App() {
         return;
       }
       if (pendingG) {
-        const map: Record<string, string> = { d: 'dashboard', e: 'dataEntry', f: 'defects', r: 'releases', t: 'timesheet', x: 'export', s: 'teamStructure' };
+        const map: Record<string, string> = { d: 'dashboard', e: 'dataEntry', f: 'defects', r: 'releases', t: 'timesheet', x: 'export', s: 'teamStructure', l: 'leaveRequests', a: 'announcements' };
         const next = map[event.key.toLowerCase()];
         if (next && canAccessTab(next)) setCurrentTab(next);
         pendingG = false;
@@ -971,6 +1137,11 @@ export default function App() {
               {confirmPasswordError && <div style={{ color: '#ef4444', fontSize: '11px', marginTop: '3px' }}>{confirmPasswordError}</div>}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
+              {isForced && (
+                <button type="button" onClick={() => { setPasswordModal(null); setPasswordForm({ current: '', next: '', confirm: '' }); setPasswordError(''); setPasswordSubmitted(false); }} style={commonStyles.button(theme, 'secondary')}>
+                  Skip for now
+                </button>
+              )}
               {!isForced && (
                 <button type="button" onClick={() => { setPasswordModal(null); setPasswordForm({ current: '', next: '', confirm: '' }); setPasswordError(''); setPasswordSubmitted(false); }} style={commonStyles.button(theme, 'secondary')}>
                   Remind me later
@@ -1058,11 +1229,11 @@ export default function App() {
               {formattedTime}
             </span>
             <button type="button" title="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)} style={commonStyles.button(theme, 'secondary', 'sm')}><HelpCircle size={14} /></button>
-            <button type="button" title="Notifications" onClick={() => setNotificationsOpen(open => !open)} style={{ ...commonStyles.button(theme, 'secondary', 'sm'), position: 'relative' }}>
+            {currentUser.role !== 'guest' && <button type="button" title="Notifications" onClick={() => setNotificationsOpen(open => !open)} style={{ ...commonStyles.button(theme, 'secondary', 'sm'), position: 'relative' }}>
               <Bell size={14} />
               {unreadNotifications.length > 0 && <span style={{ position: 'absolute', top: '-5px', right: '-5px', minWidth: '16px', height: '16px', borderRadius: '999px', backgroundColor: theme.red, color: '#fff', fontSize: '10px', display: 'grid', placeItems: 'center', padding: '0 4px' }}>{unreadNotifications.length}</span>}
-            </button>
-            {notificationsOpen && (
+            </button>}
+            {currentUser.role !== 'guest' && notificationsOpen && (
               <div style={{ position: 'absolute', right: 0, top: '34px', width: '320px', maxHeight: '420px', overflowY: 'auto', backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: '8px', boxShadow: '0 18px 42px rgba(0,0,0,0.22)', zIndex: 80 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', borderBottom: `1px solid ${theme.border}` }}>
                   <strong style={{ color: theme.text }}>Notifications</strong>
@@ -1083,7 +1254,7 @@ export default function App() {
         <main style={{ flex: 1, padding: '16px', overflowY: 'auto', boxSizing: 'border-box' }}>
           <div key={activeTabValidated} className="page-enter">
             {/* Render Active View component */}
-            {activeTabValidated === 'dashboard' && <Dashboard currentUser={currentUser} appState={scopedAppState} theme={theme} />}
+            {activeTabValidated === 'dashboard' && <Dashboard currentUser={currentUser} appState={scopedAppState} theme={theme} onNavigate={setCurrentTab} />}
             {activeTabValidated === 'profile' && renderProfile()}
             {activeTabValidated === 'teamStructure' && <TeamStructure currentUser={currentUser} appState={appState} theme={theme} />}
             
@@ -1128,6 +1299,26 @@ export default function App() {
                 showToast={showToast}
                 theme={theme}
                 readOnly={userPerms.timesheet === 'view'}
+              />
+            )}
+
+            {activeTabValidated === 'announcements' && (
+              <Announcements
+                currentUser={currentUser}
+                appState={appState}
+                setAppState={setAppState}
+                showToast={showToast}
+                theme={theme}
+              />
+            )}
+
+            {activeTabValidated === 'leaveRequests' && (
+              <LeaveRequests
+                currentUser={currentUser}
+                appState={appState}
+                setAppState={setAppState}
+                showToast={showToast}
+                theme={theme}
               />
             )}
 

@@ -18,12 +18,13 @@ export interface User {
   id: string;
   username: string;
   password?: string;
-  role: 'superadmin' | 'admin' | 'lead' | 'member';
+  role: 'superadmin' | 'admin' | 'lead' | 'member' | 'guest';
   squadId: string | null;
   projectId: string | null;
+  email: string;
   permissions?: UserPermissions;
   createdBy: string | null;
-  createdByRole: 'superadmin' | 'admin' | 'lead' | 'member' | null;
+  createdByRole: 'superadmin' | 'admin' | 'lead' | 'member' | 'guest' | null;
   mustChangePassword: boolean;
   loginCount: number;
   failedLoginAttempts: number;
@@ -165,7 +166,10 @@ export interface AuditLogEntry {
   action: 'LOGIN' | 'LOGOUT' | 'CREATE_USER' | 'DELETE_USER' | 'RESET_PASSWORD'
     | 'DATA_ENTRY_ADD' | 'DATA_ENTRY_EDIT' | 'DEFECT_ADD' | 'DEFECT_DELETE'
     | 'TIMESHEET_SAVE' | 'TIMESHEET_ADMIN_ADJUST' | 'PERMISSION_CHANGE'
-    | 'HOLIDAY_ADD' | 'HOLIDAY_DELETE' | 'RELEASE_ADD';
+    | 'HOLIDAY_ADD' | 'HOLIDAY_DELETE' | 'RELEASE_ADD'
+    | 'BACKUP' | 'RESTORE'
+    | 'ANNOUNCEMENT_ADD' | 'ANNOUNCEMENT_DELETE'
+    | 'LEAVE_APPROVED' | 'LEAVE_REJECTED';
   details: string;
   ipHint: string;
 }
@@ -194,12 +198,74 @@ export interface DefectStatusHistory {
   changedAt: string;
 }
 
+export interface Announcement {
+  id: string;
+  title: string;
+  message: string;
+  type: 'info' | 'warning' | 'success' | 'alert';
+  postedBy: string;
+  postedByName: string;
+  postedAt: string;
+  expiresAt: string | null;
+  targetRoles: User['role'][];
+  projectId: string | null;
+}
+
+export interface LeaveRequest {
+  id: string;
+  userId: string;
+  userName: string;
+  startDate: string;
+  endDate: string;
+  type: 'Annual' | 'Sick' | 'Personal' | 'Other';
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  approverId: string | null;
+  approverName: string | null;
+  approvedAt: string | null;
+  createdAt: string;
+  reviewedBy: string | null;
+  rejectionReason: string | null;
+}
+
+export interface BackupMetadata {
+  id: string;
+  filename: string;
+  createdAt: string;
+  version: string;
+  size: number;
+  createdBy: string;
+}
+
+export interface EmailConfig {
+  enabled: boolean;
+  publicKey: string;
+  serviceId: string;
+  appUrl: string;
+  templates: {
+    welcome: string;
+    weeklySummary: string;
+  };
+  senderName: string;
+  replyTo: string;
+}
+
+export interface EmailLogEntry {
+  id: string;
+  sentAt: string;
+  templateType: 'welcome' | 'weeklySummary';
+  to: string;
+  toUsername: string;
+  status: 'sent' | 'failed';
+  errorReason: string | null;
+}
+
 export interface AppState {
   users: User[];
   projects: Project[];
   squads: Squad[];
   releases: Release[];
-  releaseNames?: Release[]; // Added master list of release names
+  releaseNames?: Release[];
   dataEntries: DataEntry[];
   defects: Defect[];
   releaseEntries: ReleaseEntry[];
@@ -208,4 +274,9 @@ export interface AppState {
   customFields: CustomField[];
   auditLog: AuditLogEntry[];
   notifications: NotificationEntry[];
+  announcements: Announcement[];
+  leaveRequests: LeaveRequest[];
+  backupMetadata: BackupMetadata[];
+  emailConfig: EmailConfig;
+  emailLog: EmailLogEntry[];
 }

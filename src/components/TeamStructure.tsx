@@ -19,6 +19,7 @@ const roleColor: Record<User['role'], string> = {
   admin: '#6366f1',
   lead: '#3b82f6',
   member: '#22c55e',
+  guest: '#0d9488',
 };
 
 export function TeamStructure({ currentUser, appState, theme }: TeamStructureProps) {
@@ -30,19 +31,28 @@ export function TeamStructure({ currentUser, appState, theme }: TeamStructurePro
 
   const scopedUsers = useMemo(() => {
     if (currentUser.role === 'superadmin') return appState.users;
-    if (currentUser.role === 'admin') return appState.users.filter(user => user.projectId === currentUser.projectId || user.id === currentUser.id || user.role === 'superadmin');
+    if (currentUser.role === 'admin' || currentUser.role === 'guest') return appState.users.filter(user => user.projectId === currentUser.projectId || user.id === currentUser.id || user.role === 'superadmin');
     if (currentUser.role === 'lead') return appState.users.filter(user => user.id === currentUser.id || user.reportsTo === currentUser.id || (currentUser.directReports || []).includes(user.id));
     return [];
   }, [appState.users, currentUser]);
 
   const scopedIds = new Set(scopedUsers.map(user => user.id));
-  const childrenFor = (userId: string) => scopedUsers.filter(user => user.reportsTo === userId && scopedIds.has(user.id));
+  const childrenFor = (userId: string) => {
+    const direct = scopedUsers.filter(user => user.reportsTo === userId && scopedIds.has(user.id));
+    const parentUser = scopedUsers.find(u => u.id === userId);
+    if (parentUser?.role === 'superadmin') {
+      const orphanAdmins = scopedUsers.filter(u => u.role === 'admin' && !u.reportsTo && scopedIds.has(u.id));
+      return [...direct, ...orphanAdmins];
+    }
+    return direct;
+  };
   const roots = scopedUsers.filter(user => {
     if (currentUser.role === 'lead') return user.id === currentUser.id;
     if (user.role === 'superadmin') return true;
+    if (user.role === 'admin' && !user.reportsTo) return false;
     return !user.reportsTo || !scopedIds.has(user.reportsTo);
   });
-  const orphans = scopedUsers.filter(user => user.role !== 'superadmin' && !user.reportsTo);
+  const orphans = scopedUsers.filter(user => user.role !== 'superadmin' && user.role !== 'admin' && !user.reportsTo);
 
   const statusFor = (user: User) => {
     const entry = appState.timesheetEntries.find(item => item.userId === user.id && item.month === today.slice(0, 7));
@@ -65,7 +75,8 @@ export function TeamStructure({ currentUser, appState, theme }: TeamStructurePro
     const status = statusFor(user);
     const match = matches(user);
     const manager = appState.users.find(item => item.id === user.reportsTo);
-    const tooltip = `${user.username} | ${user.role} | ${squadMap.get(user.squadId || '') || 'No squad'} | ${projectMap.get(user.projectId || '') || 'All projects'} | Reports to ${manager?.username || 'nobody'} | ${children.length} direct reports`;
+    const reportsToText = user.role === 'admin' ? '' : ` | Reports to ${manager?.username || 'nobody'}`;
+    const tooltip = `${user.username} | ${user.role} | ${squadMap.get(user.squadId || '') || 'No squad'} | ${projectMap.get(user.projectId || '') || 'All projects'}${reportsToText} | ${children.length} direct reports`;
     return (
       <div key={user.id} style={{ marginLeft: depth ? '28px' : 0, position: 'relative' }}>
         {depth > 0 && <div style={{ position: 'absolute', left: '-16px', top: 0, bottom: 0, borderLeft: `1px solid ${theme.border}` }} />}

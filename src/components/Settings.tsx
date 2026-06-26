@@ -5,11 +5,13 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { ThemeTokens, commonStyles } from '../theme';
-import { AppState, CustomField, Project, Squad, User, UserPermissions } from '../types';
-import { exportToCSV, generateId, getPermissionsForRole, hashPassword, sanitise } from '../utils';
+import { AppState, CustomField, EmailConfig, Project, Squad, User, UserPermissions } from '../types';
+import { exportToCSV, generateId, generateStrongPassword, getPermissionsForRole, hashPassword, sanitise, sendEmailJS, maskEmail, getRoleSummary, getFirstSteps, LOGIN_INSTRUCTIONS_TEXT, formatDateTime } from '../utils';
 import { Field } from './Shared';
 import { PermissionsTable } from './PermissionsTable';
-import { Plus, Trash2, Shield, UserX, UserCheck, Key, Settings as SettingsIcon, X } from 'lucide-react';
+import { BackupRestore } from './BackupRestore';
+import { BulkImport } from './BulkImport';
+import { Plus, Trash2, Shield, UserX, UserCheck, Key, Settings as SettingsIcon, X, HardDrive, Upload, Mail, Send, Save } from 'lucide-react';
 
 interface SettingsProps {
   currentUser: User;
@@ -22,19 +24,16 @@ interface SettingsProps {
 }
 
 export function Settings({ currentUser, appState, setAppState, showToast, theme, readOnly = false, onUpdateCurrentUser }: SettingsProps) {
-  // Tabs: "users" | "projects" | "squads" | "fields"
-  const [activeTab, setActiveTab] = useState<'users' | 'projects' | 'squads' | 'fields' | 'audit'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'projects' | 'squads' | 'fields' | 'audit' | 'backup' | 'import' | 'email'>('users');
 
   // Input states for My Account
   const [editAccountForm, setEditAccountForm] = useState({
     username: currentUser.username,
+    email: currentUser.email || '',
     password: '',
     confirmPassword: '',
   });
   const [accountErrors, setAccountErrors] = useState<Record<string, string>>({});
-  const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null);
-  const [resetPasswordForm, setResetPasswordForm] = useState({ password: '', confirm: '' });
-  const [resetPasswordErrors, setResetPasswordErrors] = useState<Record<string, string>>({});
   const [auditFilters, setAuditFilters] = useState({ user: '', action: '', from: '', to: '' });
   const updateAccountForm = (key: keyof typeof editAccountForm, value: string) => {
     setEditAccountForm(previous => ({ ...previous, [key]: value }));
@@ -45,10 +44,18 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     });
   };
 
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [generatedPassword, setGeneratedPassword] = useState('');
+  const [generatedUsername, setGeneratedUsername] = useState('');
+  const [showPwText, setShowPwText] = useState(false);
+  const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
+  const [resetTargetUser, setResetTargetUser] = useState<User | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ message: string; onConfirm: () => void } | null>(null);
+
   // Input states for Users
   const [userForm, setUserForm] = useState({
     username: '',
-    password: '',
+    email: '',
     role: 'member' as User['role'],
     squadId: '',
     projectId: '',
@@ -87,6 +94,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     setEditAccountForm(prev => ({
       ...prev,
       username: currentUser.username,
+      email: currentUser.email || '',
     }));
   }, [currentUser]);
 
@@ -133,11 +141,6 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
         .filter(user => user.role === 'admin' && (!projectId || user.projectId === projectId))
         .map(user => ({ value: user.id, label: `${user.username}${user.jobTitle ? ` - ${user.jobTitle}` : ''}` }));
     }
-    if (userForm.role === 'admin') {
-      return appState.users
-        .filter(user => user.role === 'superadmin')
-        .map(user => ({ value: user.id, label: user.username }));
-    }
     return [];
   }, [appState.users, currentUser.projectId, isAdmin, userForm.projectId, userForm.role]);
 
@@ -154,8 +157,8 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
   ), [appState.squads, currentUser.projectId, isSuperAdmin]);
 
   const allowedRoles: User['role'][] = isSuperAdmin
-    ? ['superadmin', 'admin', 'lead', 'member']
-    : isAdmin ? ['lead', 'member'] : [];
+    ? ['superadmin', 'admin', 'lead', 'member', 'guest']
+    : isAdmin ? ['lead', 'member', 'guest'] : [];
 
   // ---------------------------------------------------------------------------
   // USERS OPERATIONS
@@ -169,14 +172,11 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     else if (username.length < 3) nextErrors.username = 'Username must be at least 3 characters.';
     else if (!/^[a-zA-Z0-9_]+$/.test(username)) nextErrors.username = 'Use letters, numbers, and underscores only.';
     else if (appState.users.some((u) => u.username.toLowerCase() === username)) nextErrors.username = 'Username already exists.';
-    if (!userForm.password) nextErrors.password = 'Password is required.';
-    else if (userForm.password.length < 8) nextErrors.password = 'Password must be at least 8 characters.';
-    else if (!/[A-Z]/.test(userForm.password)) nextErrors.password = 'Password must include an uppercase letter.';
-    else if (!/\d/.test(userForm.password)) nextErrors.password = 'Password must include a number.';
+    if (userForm.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userForm.email)) nextErrors.email = 'Please enter a valid email address.';
     if (!userForm.role || !allowedRoles.includes(userForm.role)) nextErrors.role = 'Role is required.';
-    if ((userForm.role === 'lead' || userForm.role === 'member') && !(isAdmin ? currentUser.projectId : userForm.projectId)) nextErrors.projectId = 'Project is required.';
+    if ((userForm.role === 'lead' || userForm.role === 'member' || userForm.role === 'guest') && !(isAdmin ? currentUser.projectId : userForm.projectId)) nextErrors.projectId = 'Project is required.';
     if (userForm.role === 'member' && !userForm.squadId) nextErrors.squadId = 'Squad is required.';
-    if (userForm.role !== 'superadmin' && !userForm.reportsTo) nextErrors.reportsTo = 'Direct manager is required.';
+    if ((userForm.role === 'member' || userForm.role === 'lead') && !userForm.reportsTo) nextErrors.reportsTo = 'Direct manager is required.';
     setUserErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
 
@@ -187,21 +187,64 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       ? userForm.squadId
       : null;
 
+    // STEP 1 — Generate plain text password FIRST
+    const plainPassword = generateStrongPassword();
+
+    // STEP 2 — Send email with plain text password BEFORE hashing
+    let emailSent = false;
+    if (userForm.email && appState.emailConfig?.enabled) {
+      const projectName = projectMap.get(isAdmin ? (currentUser.projectId || '') : userForm.projectId) || '';
+      const squadName = squadMap.get(userForm.squadId) || '';
+      const result = await sendEmailJS(appState.emailConfig, appState.emailConfig.templates.welcome, {
+        to_email: userForm.email,
+        to_name: userForm.username,
+        username: userForm.username,
+        temp_password: plainPassword,
+        role: userForm.role,
+        project: projectName || 'All Projects',
+        squad: squadName || '—',
+        role_summary: getRoleSummary(userForm.role),
+        first_steps: getFirstSteps(userForm.role),
+        login_instructions: LOGIN_INSTRUCTIONS_TEXT,
+        app_url: appState.emailConfig?.appUrl || '[ App URL ]',
+        sender_name: appState.emailConfig?.senderName || 'QA Hub',
+        reply_to: appState.emailConfig?.replyTo || '',
+      });
+      emailSent = result.success;
+      setAppState(prev => ({
+        ...prev,
+        emailLog: [{
+          id: generateId(),
+          sentAt: new Date().toISOString(),
+          templateType: 'welcome' as const,
+          to: maskEmail(userForm.email || ''),
+          toUsername: userForm.username,
+          status: result.success ? 'sent' as const : 'failed' as const,
+          errorReason: result.success ? null : (result.reason || null),
+        }, ...(prev.emailLog || [])].slice(0, 200),
+      }));
+    }
+
+    // STEP 3 — Hash AFTER email is sent
+    const hashedPassword = await hashPassword(plainPassword);
+
+    // STEP 4 — Save user with hashed password
     const newUser: User = {
       id: generateId(),
       username: sanitise(userForm.username.trim()),
-      password: await hashPassword(userForm.password.trim()),
+      email: userForm.email.trim(),
+      password: hashedPassword,
       role: userForm.role,
       squadId,
       projectId,
-      permissions: userForm.role === 'superadmin' ? getPermissionsForRole('superadmin') : userPermissions,
+      permissions: userForm.role === 'superadmin' ? getPermissionsForRole('superadmin') : (userForm.role === 'guest' ? getPermissionsForRole('guest') : userPermissions),
       createdBy: currentUser.id,
       createdByRole: currentUser.role,
       mustChangePassword: true,
       loginCount: 0,
       failedLoginAttempts: 0,
       lockedUntil: null,
-      reportsTo: userForm.role === 'superadmin' ? null : userForm.reportsTo,
+      reportsTo: (userForm.role === 'superadmin' || userForm.role === 'guest' || userForm.role === 'admin') ? null : userForm.reportsTo,
       directReports: [],
       jobTitle: sanitise(userForm.jobTitle.trim()),
       passwordChangedAt: new Date().toISOString(),
@@ -214,14 +257,14 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       users: [...prev.users.map(user => user.id === newUser.reportsTo ? {
         ...user,
         directReports: Array.from(new Set([...(user.directReports || []), newUser.id])),
-        notifications: [{
+        notifications: newUser.reportsTo ? [{
           id: generateId(),
           message: `${newUser.username} has been added as your direct report.`,
           read: false,
           createdAt: new Date().toISOString(),
           type: 'info' as const,
           link: 'teamStructure',
-        }, ...(user.notifications || [])].slice(0, 50),
+        }, ...(user.notifications || [])].slice(0, 50) : user.notifications,
       } : user), newUser],
       auditLog: [{
         id: generateId(),
@@ -237,7 +280,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
 
     setUserForm({
       username: '',
-      password: '',
+      email: '',
       role: 'member',
       squadId: '',
       projectId: isAdmin ? (currentUser.projectId || '') : '',
@@ -246,7 +289,14 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     });
     setUserPermissions(getPermissionsForRole('member'));
 
-    showToast(`User ${newUser.username} added successfully!`, 'success');
+    // STEP 5 — Show in-app modal or toast
+    if (userForm.email && appState.emailConfig?.enabled) {
+      showToast(emailSent ? `User created. Welcome email sent to ${userForm.email}.` : 'User created. Welcome email could not be sent — check Email Config.', emailSent ? 'success' : 'error');
+    } else {
+      setGeneratedUsername(userForm.username);
+      setGeneratedPassword(plainPassword);
+      setShowPasswordModal(true);
+    }
   };
 
   const handleToggleEditPermissions = (u: User) => {
@@ -315,35 +365,21 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     showToast('User demoted to Member.', 'success');
   };
 
-  const validatePasswordPair = (password: string, confirm: string) => {
-    const nextErrors: Record<string, string> = {};
-    if (!password) nextErrors.password = 'New Password is required.';
-    else if (password.length < 8) nextErrors.password = 'Password must be at least 8 characters.';
-    else if (!/[A-Z]/.test(password)) nextErrors.password = 'Password must include an uppercase letter.';
-    else if (!/\d/.test(password)) nextErrors.password = 'Password must include a number.';
-    if (!confirm) nextErrors.confirm = 'Confirm Password is required.';
-    else if (password !== confirm) nextErrors.confirm = 'Passwords do not match.';
-    return nextErrors;
-  };
-
   const handleResetPassword = (userId: string) => {
     const target = appState.users.find(u => u.id === userId);
     if (!target || (!isSuperAdmin && (target.role === 'admin' || target.role === 'superadmin'))) return;
-    setResetPasswordUser(target);
-    setResetPasswordForm({ password: '', confirm: '' });
-    setResetPasswordErrors({});
+    setResetTargetUser(target);
+    setShowResetConfirmModal(true);
   };
 
-  const handleSaveResetPassword = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!resetPasswordUser) return;
-    const nextErrors = validatePasswordPair(resetPasswordForm.password, resetPasswordForm.confirm);
-    setResetPasswordErrors(nextErrors);
-    if (Object.keys(nextErrors).length) return;
-    const password = await hashPassword(resetPasswordForm.password.trim());
+  const handleConfirmResetPassword = async () => {
+    if (!resetTargetUser) return;
+    const target = resetTargetUser;
+    const newPlainPassword = generateStrongPassword();
+    const password = await hashPassword(newPlainPassword);
     setAppState((prev) => ({
       ...prev,
-      users: prev.users.map((u) => (u.id === resetPasswordUser.id ? {
+      users: prev.users.map((u) => (u.id === target.id ? {
         ...u,
         password,
         mustChangePassword: true,
@@ -364,13 +400,19 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
         username: currentUser.username,
         role: currentUser.role,
         action: 'RESET_PASSWORD',
-        details: `Reset password for ${resetPasswordUser.username}`,
+        details: `Reset password for ${target.username}`,
         ipHint: 'Browser session',
       }, ...(prev.auditLog || [])].slice(0, 500),
     }));
-    setResetPasswordUser(null);
-    setResetPasswordForm({ password: '', confirm: '' });
-    showToast('Password reset successful.', 'success');
+    setShowResetConfirmModal(false);
+    setResetTargetUser(null);
+    if (target?.email) {
+      showToast(`Password reset for ${target.username}.`, 'success');
+    } else {
+      setGeneratedUsername(target.username);
+      setGeneratedPassword(newPlainPassword);
+      setShowPasswordModal(true);
+    }
   };
 
   const handleRemoveUser = (userId: string) => {
@@ -380,29 +422,276 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       showToast('This account cannot be deleted.', 'error');
       return;
     }
+    setConfirmDelete({
+      message: `Are you sure you want to delete user "${target.username}"? This cannot be undone.`,
+      onConfirm: () => {
+        setAppState((prev) => ({
+          ...prev,
+          users: prev.users
+            .filter((u) => u.id !== userId)
+            .map(user => ({
+              ...user,
+              reportsTo: user.reportsTo === userId ? null : user.reportsTo,
+              directReports: (user.directReports || []).filter(id => id !== userId),
+            })),
+          auditLog: [{
+            id: generateId(),
+            timestamp: new Date().toISOString(),
+            userId: currentUser.id,
+            username: currentUser.username,
+            role: currentUser.role,
+            action: 'DELETE_USER',
+            details: `Deleted user ${target.username}`,
+            ipHint: 'Browser session',
+          }, ...(prev.auditLog || [])].slice(0, 500),
+        }));
+        showToast('User deleted.', 'success');
+        setConfirmDelete(null);
+      },
+    });
+  };
 
-    if (confirm('Are you sure you want to delete this user?')) {
-      setAppState((prev) => ({
-        ...prev,
-        users: prev.users
-          .filter((u) => u.id !== userId)
-          .map(user => ({
-            ...user,
-            reportsTo: user.reportsTo === userId ? null : user.reportsTo,
-            directReports: (user.directReports || []).filter(id => id !== userId),
-          })),
-        auditLog: [{
-          id: generateId(),
-          timestamp: new Date().toISOString(),
-          userId: currentUser.id,
-          username: currentUser.username,
-          role: currentUser.role,
-          action: 'DELETE_USER',
-          details: `Deleted user ${target.username}`,
-          ipHint: 'Browser session',
-        }, ...(prev.auditLog || [])].slice(0, 500),
-      }));
-      showToast('User deleted.', 'success');
+  const generateWelcomeEmail = (username: string, password: string, role: string, projectName: string, squadName: string): string => {
+    const base = [
+      `Hi ${username},`,
+      '',
+      'You have been added to QA Hub, our internal QA metrics and team management platform.',
+      '',
+      'Your login details are below. Please keep these confidential.',
+      '',
+      '─────────────────────────────────',
+      'App URL:     {APP_URL}',
+      `Username:    ${username}`,
+      `Password:    ${password}`,
+      `Role:        ${role === 'superadmin' ? 'Super Admin' : role.charAt(0).toUpperCase() + role.slice(1)}`,
+      `Project:     ${projectName || (role === 'superadmin' ? 'All Projects' : '—')}`,
+      `Squad:       ${squadName || '—'}`,
+      '─────────────────────────────────',
+      '',
+      'HOW TO LOG IN:',
+      '1. Open the app URL in your browser',
+      '2. Enter your username and password',
+      '3. On first login you will be prompted to change your password',
+      '4. Choose a strong password (min 8 characters, one uppercase, one number)',
+      '5. You will be asked to set up a security question — answer carefully as',
+      '   you will need it to reset your password in future',
+      '',
+      'HOW TO LOG OUT:',
+      '- Click the Sign Out button (↩) at the bottom of the left sidebar',
+      '- Your session will also automatically lock after 10 minutes of inactivity',
+      '- Closing your browser tab ends your session',
+    ];
+
+    const roleSections: Record<string, string[]> = {
+      superadmin: [
+        '',
+        'YOUR ROLE: Super Admin',
+        '─────────────────────',
+        'As Super Admin you have full access to the entire QA Hub platform across all projects.',
+        '',
+        'YOUR RESPONSIBILITIES:',
+        '• Create and manage Admin accounts for each project',
+        '• Add and manage Projects across the organisation',
+        '• Configure system-wide settings (Squads, Custom Fields)',
+        '• View all metrics, data entries, defects, releases, and timesheets across all projects',
+        '• Manage the Holiday List for the organisation',
+        '• Perform data backups and restores',
+        '• Review the Audit Log for security events',
+        '• Post organisation-wide Announcements',
+        '',
+        'WHAT YOU CAN DO:',
+        '• Full access to all pages and all data',
+        '• Create, edit, promote, and remove any user',
+        '• Reset any user\'s password',
+        '• Override any team member\'s timesheet on their behalf',
+        '• Export any report in any format',
+        '',
+        'WHAT TO DO FIRST:',
+        '1. Change your default password immediately (Settings → Edit My Account)',
+        '2. Add your Projects (Settings → Projects)',
+        '3. Add Squads under each Project (Settings → Squads)',
+        '4. Create Admin accounts for each Project',
+        '5. Add Releases for the current cycle (Releases → Manage Releases)',
+        '6. Add the Holiday List for this year (Holiday List)',
+      ],
+      admin: [
+        '',
+        `YOUR ROLE: Admin`,
+        '─────────────────────',
+        `As Admin you have full access within your assigned project: ${projectName}`,
+        '',
+        'YOUR RESPONSIBILITIES:',
+        '• Create and manage Lead and Member accounts for your project',
+        '• Oversee all QA activities, metrics, and defects within your project',
+        '• Approve or reject leave requests from your team',
+        '• Manage Squads within your project',
+        '• Post project-level Announcements',
+        '',
+        'WHAT YOU CAN DO:',
+        '• View all data entries, defects, releases, and timesheets in your project',
+        '• Create Lead and Member user accounts (within your project only)',
+        '• Adjust any team member\'s timesheet on their behalf',
+        '• Export all reports for your project',
+        '• Promote Members to Lead role',
+        '',
+        'WHAT YOU CANNOT DO:',
+        '• Access data from other projects',
+        '• Create Admin or Super Admin accounts',
+        '• Modify global settings (Projects list, global Custom Fields)',
+        '',
+        'WHAT TO DO FIRST:',
+        '1. Change your default password immediately',
+        '2. Create Lead accounts for your squads',
+        '3. Ensure squad members are correctly assigned',
+      ],
+      lead: [
+        '',
+        'YOUR ROLE: Lead',
+        '─────────────────────',
+        'As Lead you manage your squad and oversee their QA activities.',
+        '',
+        'YOUR RESPONSIBILITIES:',
+        '• Review and approve/reject leave requests from your direct reports',
+        '• Monitor data entries and defects logged by your squad',
+        '• Ensure timesheets are filled by squad members',
+        '• Review the Dashboard metrics for your squad',
+        '• Log data entries and defects yourself',
+        '',
+        'WHAT YOU CAN DO:',
+        '• View all data entries, defects, and releases in your project',
+        '• Log your own data entries and defects',
+        '• Approve or reject leave requests from your team members',
+        '• Export reports for your project',
+        '• View the Team Structure and Squad Capacity',
+        '',
+        'WHAT YOU CANNOT DO:',
+        '• Create or manage user accounts',
+        '• Adjust other members\' timesheets',
+        '• Modify settings',
+        '',
+        'WHAT TO DO FIRST:',
+        '1. Change your default password immediately',
+        '2. Familiarise yourself with the Dashboard for your project',
+        '3. Start logging data entries and defects',
+      ],
+      member: [
+        '',
+        'YOUR ROLE: Member',
+        '─────────────────────',
+        'As a Member you log your QA work — data entries, defects, and timesheet.',
+        '',
+        'YOUR RESPONSIBILITIES:',
+        '• Log data entries for stories you have tested',
+        '• Log defects you have found',
+        '• Fill your timesheet daily or weekly',
+        '• Submit leave requests through the app',
+        '',
+        'WHAT YOU CAN DO:',
+        '• Add data entries for your own stories tested',
+        '• Log defects with Jira links',
+        '• Fill your monthly timesheet (calendar or table view)',
+        '• Submit leave requests',
+        '• View your own entries and defects',
+        '',
+        'WHAT YOU CANNOT DO:',
+        '• View other members\' data entries or defects',
+        '• Access the Dashboard or summary metrics',
+        '• Export reports',
+        '• Manage settings',
+        '',
+        'WHAT TO DO FIRST:',
+        '1. Change your default password immediately',
+        '2. Fill your timesheet for the current month',
+        '3. Start logging stories tested and defects found',
+      ],
+      guest: [
+        '',
+        'YOUR ROLE: Guest (Read-Only Observer)',
+        '─────────────────────────────────────',
+        'As a Guest you have read-only access to metrics and team information.',
+        '',
+        'YOUR RESPONSIBILITIES:',
+        '• Review project and squad quality metrics on the Dashboard',
+        '• View the team structure and reporting hierarchy',
+        '• Download summary and defect reports as needed',
+        '',
+        'WHAT YOU CAN DO:',
+        '• View the Dashboard — all KPI metrics, project breakdown, squad breakdown, defect summary',
+        '• View the Team Structure — full org tree for your project',
+        '• Download Overall Summary and Defect Log reports (Excel, CSV, PDF)',
+        '',
+        'WHAT YOU CANNOT DO:',
+        '• Log or edit any data (data entries, defects, timesheets)',
+        '• Access team member timesheets',
+        '• Manage settings, users, or any configuration',
+        '• View raw data tables — only aggregated metrics',
+        '',
+        'NOTE: Your access is strictly read-only. If you need to make changes,',
+        'contact your Admin to request an appropriate role.',
+      ],
+    };
+
+    const section = roleSections[role] || [];
+    return [...base, ...section].join('\n');
+  };
+
+  // ---------------------------------------------------------------------------
+  // EMAIL CONFIG OPERATIONS
+  // ---------------------------------------------------------------------------
+  const handleSaveEmailConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    const config = appState.emailConfig;
+    if (config?.enabled) {
+      if (!config.publicKey || !config.serviceId || !config.templates.welcome) {
+        showToast('Public Key, Service ID, and Welcome Template ID are required when EmailJS is enabled.', 'error');
+        return;
+      }
+    }
+    setAppState(prev => ({ ...prev, emailConfig: { ...prev.emailConfig } }));
+    if ((window as any).emailjs && config?.publicKey) {
+      (window as any).emailjs.init({ publicKey: config.publicKey });
+    }
+    showToast('Email configuration saved.', 'success');
+  };
+
+  const handleSendTestEmail = async () => {
+    const config = appState.emailConfig;
+    if (!config?.enabled || !config?.publicKey || !config?.serviceId || !config?.templates?.welcome) {
+      showToast('Complete the EmailJS configuration first (enable, Public Key, Service ID, Welcome Template).', 'error');
+      return;
+    }
+    if (!currentUser.email) {
+      showToast('Your account needs an email address set in Edit My Account above.', 'error');
+      return;
+    }
+    const result = await sendEmailJS(config, config.templates.welcome, {
+      to_email: currentUser.email,
+      to_name: currentUser.username,
+      username: currentUser.username,
+      temp_password: '••••••••',
+      role: currentUser.role,
+      project: projectMap.get(currentUser.projectId || '') || 'All Projects',
+      squad: squadMap.get(currentUser.squadId || '') || '—',
+      role_summary: getRoleSummary(currentUser.role),
+      first_steps: getFirstSteps(currentUser.role),
+      login_instructions: LOGIN_INSTRUCTIONS_TEXT,
+    });
+    setAppState(prev => ({
+      ...prev,
+      emailLog: [{
+        id: generateId(),
+        sentAt: new Date().toISOString(),
+        templateType: 'welcome' as const,
+        to: maskEmail(currentUser.email || ''),
+        toUsername: currentUser.username,
+        status: result.success ? 'sent' as const : 'failed' as const,
+        errorReason: result.success ? null : (result.reason || null),
+      }, ...(prev.emailLog || [])].slice(0, 200),
+    }));
+    if (result.success) {
+      showToast(`Test email sent to ${currentUser.email}.`, 'success');
+    } else {
+      showToast(`Test email failed: ${result.reason}`, 'error');
     }
   };
 
@@ -426,13 +715,17 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
   };
 
   const handleRemoveProject = (id: string) => {
-    if (confirm('Removing this project will invalidate existing metrics referencing it. Proceed?')) {
-      setAppState((prev) => ({
-        ...prev,
-        projects: prev.projects.filter((p) => p.id !== id),
-      }));
-      showToast('Project removed.', 'success');
-    }
+    setConfirmDelete({
+      message: 'Removing this project will invalidate existing metrics referencing it. Proceed?',
+      onConfirm: () => {
+        setAppState((prev) => ({
+          ...prev,
+          projects: prev.projects.filter((p) => p.id !== id),
+        }));
+        showToast('Project removed.', 'success');
+        setConfirmDelete(null);
+      },
+    });
   };
 
   // ---------------------------------------------------------------------------
@@ -463,13 +756,17 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
   const handleRemoveSquad = (id: string) => {
     const squad = appState.squads.find(s => s.id === id);
     if (!squad || (!isSuperAdmin && squad.projectId !== currentUser.projectId)) return;
-    if (confirm('Removing this Squad will invalidate existing metrics referencing it. Proceed?')) {
-      setAppState((prev) => ({
-        ...prev,
-        squads: prev.squads.filter((s) => s.id !== id),
-      }));
-      showToast('Squad removed.', 'success');
-    }
+    setConfirmDelete({
+      message: 'Removing this Squad will invalidate existing metrics referencing it. Proceed?',
+      onConfirm: () => {
+        setAppState((prev) => ({
+          ...prev,
+          squads: prev.squads.filter((s) => s.id !== id),
+        }));
+        showToast('Squad removed.', 'success');
+        setConfirmDelete(null);
+      },
+    });
   };
 
   // ---------------------------------------------------------------------------
@@ -513,24 +810,30 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
   };
 
   const handleRemoveCustomField = (id: string) => {
-    if (confirm('Are you sure you want to delete this custom field?')) {
-      setAppState((prev) => ({
-        ...prev,
-        customFields: prev.customFields.filter((cf) => cf.id !== id),
-      }));
-      showToast('Custom field removed.', 'success');
-    }
+    setConfirmDelete({
+      message: 'Are you sure you want to delete this custom field?',
+      onConfirm: () => {
+        setAppState((prev) => ({
+          ...prev,
+          customFields: prev.customFields.filter((cf) => cf.id !== id),
+        }));
+        showToast('Custom field removed.', 'success');
+        setConfirmDelete(null);
+      },
+    });
   };
 
   const handleUpdateMyAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     const newUsername = sanitise(editAccountForm.username.trim());
+    const newEmail = editAccountForm.email.trim();
     const newPassword = editAccountForm.password;
     const confirmPassword = editAccountForm.confirmPassword;
 
     const nextErrors: Record<string, string> = {};
     if (!newUsername) nextErrors.username = 'Username is required.';
     else if (appState.users.some((u) => u.id !== currentUser.id && u.username.toLowerCase() === newUsername.toLowerCase())) nextErrors.username = 'Username is already taken.';
+    if (newEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) nextErrors.email = 'Please enter a valid email address.';
     if (newPassword) {
       if (newPassword.length < 8) nextErrors.password = 'Password must be at least 8 characters.';
       else if (!/[A-Z]/.test(newPassword)) nextErrors.password = 'Password must include an uppercase letter.';
@@ -548,6 +851,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
         const updated: User = {
           ...u,
           username: newUsername,
+          email: newEmail,
         };
         if (hashedPassword) {
           updated.password = hashedPassword;
@@ -582,6 +886,13 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       return (
         <span style={{ fontSize: '11px', color: theme.muted, fontStyle: 'italic' }}>
           All Edit Access (Super Admin)
+        </span>
+      );
+    }
+    if (u.role === 'guest') {
+      return (
+        <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#0d948818', color: '#0d9488', fontWeight: 600 }}>
+          Guest (Read-Only)
         </span>
       );
     }
@@ -650,7 +961,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       
       {/* Tab selection */}
       <div style={{ display: 'flex', borderBottom: `2px solid ${theme.border}`, gap: '16px' }}>
-        {(['users', ...(isSuperAdmin ? ['projects'] : []), 'squads', 'fields', ...(isSuperAdmin ? ['audit'] : [])] as const).map((tab) => (
+        {(['users', ...(isSuperAdmin ? ['projects'] : []), 'squads', 'fields', ...(isSuperAdmin ? ['audit'] : []), ...(isSuperAdmin ? ['backup'] : []), ...(isSuperAdmin ? ['import'] : []), ...(isSuperAdmin ? ['email'] : [])] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -667,7 +978,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
               textTransform: 'capitalize',
             }}
           >
-            {tab === 'fields' ? 'Custom Fields' : tab === 'audit' ? 'Audit Log' : tab}
+            {tab === 'fields' ? 'Custom Fields' : tab === 'audit' ? 'Audit Log' : tab === 'backup' ? 'Backup & Restore' : tab === 'import' ? 'Import Data' : tab === 'email' ? 'Email Config' : tab}
           </button>
         ))}
       </div>
@@ -692,6 +1003,15 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                   onChange={(v) => updateAccountForm('username', v)}
                   error={accountErrors.username}
                   required
+                  theme={theme}
+                />
+                <Field
+                  label="Email Address"
+                  type="email"
+                  placeholder="user@company.com"
+                  value={editAccountForm.email}
+                  onChange={(v) => updateAccountForm('email', v)}
+                  error={accountErrors.email}
                   theme={theme}
                 />
                 <div>
@@ -749,8 +1069,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
             </h3>
             <form noValidate onSubmit={handleAddUser} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
               <Field label="Username" type="text" placeholder="e.g. janesmith" value={userForm.username} onChange={(v) => updateUserForm('username', v)} error={userErrors.username} required theme={theme} />
-              <Field label="Password" type="password" placeholder="Password value" value={userForm.password} onChange={(v) => updateUserForm('password', v)} error={userErrors.password} required theme={theme} />
-              
+              <Field label="Email Address" type="email" placeholder="user@company.com" value={userForm.email} onChange={(v) => updateUserForm('email', v)} error={userErrors.email} theme={theme} />
               <Field
                 label="Role"
                 type="select"
@@ -761,21 +1080,21 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                 }}
                 options={allowedRoles.map(role => ({
                   value: role,
-                  label: role === 'superadmin' ? 'Super Admin' : role.charAt(0).toUpperCase() + role.slice(1)
+                  label: role === 'superadmin' ? 'Super Admin' : role === 'guest' ? 'Guest (Read-Only)' : role.charAt(0).toUpperCase() + role.slice(1)
                 }))}
                 required
                 error={userErrors.role}
                 theme={theme}
               />
 
-              {(userForm.role === 'lead' || userForm.role === 'member') && <Field
+              {(userForm.role === 'lead' || userForm.role === 'member' || userForm.role === 'guest') && <Field
                 label="Assigned Project"
                 type="select"
                 value={userForm.projectId}
                 onChange={(v) => updateUserForm('projectId', v, { squadId: '' })}
                 options={projectOptions}
                 placeholder="Select project"
-                required
+                required={userForm.role !== 'guest'}
                 error={userErrors.projectId}
                 disabled={isAdmin}
                 theme={theme}
@@ -793,7 +1112,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                 theme={theme}
               />}
 
-              {userForm.role !== 'superadmin' && <Field
+              {(userForm.role === 'member' || userForm.role === 'lead') && <Field
                 label="Reports To (Direct Manager)"
                 type="select"
                 value={userForm.reportsTo}
@@ -814,7 +1133,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                 theme={theme}
               />
 
-              <div style={{ gridColumn: '1 / -1', marginTop: '12px' }}>
+              {userForm.role !== 'guest' && <div style={{ gridColumn: '1 / -1', marginTop: '12px' }}>
                 <label style={{ ...commonStyles.label(theme), fontSize: '14px', fontWeight: 600, color: theme.text }}>
                   Permissions Configuration
                 </label>
@@ -827,9 +1146,16 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                   readOnly={userForm.role === 'superadmin'}
                   theme={theme}
                 />
-              </div>
+              </div>}
 
-              <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+              {userForm.role === 'guest' && (
+                <div style={{ gridColumn: '1 / -1', padding: '12px 16px', backgroundColor: '#0d948812', border: '1px solid #0d948830', borderRadius: '8px', fontSize: '13px', color: theme.text }}>
+                  Guest users have read-only access to Dashboard, Team Structure, and Export only.
+                </div>
+              )}
+
+              <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
+                <div style={{ fontSize: '11px', color: theme.muted, marginRight: 'auto' }}>A strong password will be auto-generated. Welcome email sent via EmailJS if enabled.</div>
                 <button type="submit" style={commonStyles.button(theme, 'primary')}>
                   Add User Account
                 </button>
@@ -869,9 +1195,13 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                             )}
                           </td>
                           <td style={commonStyles.td(theme)}>
-                            <span style={{ textTransform: 'capitalize', fontWeight: u.role === 'superadmin' || u.role === 'admin' ? 700 : 'normal' }}>
-                              {u.role === 'superadmin' ? 'Super Admin' : u.role}
-                            </span>
+                            {u.role === 'guest' ? (
+                              <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#0d948818', color: '#0d9488', fontWeight: 700, textTransform: 'capitalize' }}>guest</span>
+                            ) : (
+                              <span style={{ textTransform: 'capitalize', fontWeight: u.role === 'superadmin' || u.role === 'admin' ? 700 : 'normal' }}>
+                                {u.role === 'superadmin' ? 'Super Admin' : u.role}
+                              </span>
+                            )}
                           </td>
                           <td style={commonStyles.td(theme)}>{squadMap.get(u.squadId || '') || '—'}</td>
                           {isSuperAdmin && <td style={commonStyles.td(theme)}>{projectMap.get(u.projectId || '') || 'All Projects'}</td>}
@@ -881,7 +1211,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                           <td style={commonStyles.td(theme)}>
                             {u.id !== 'superadmin' && canEditSettings ? (
                               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                {u.role !== 'superadmin' && (isSuperAdmin || (u.role !== 'admin' && u.role !== 'superadmin')) && <button
+                                {u.role !== 'superadmin' && u.role !== 'guest' && (isSuperAdmin || (u.role !== 'admin' && u.role !== 'superadmin')) && <button
                                   onClick={() => handleToggleEditPermissions(u)}
                                   style={commonStyles.button(theme, 'secondary', 'sm')}
                                   title="Edit Page Permissions"
@@ -1304,49 +1634,206 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
         </div>
       )}
 
-      {resetPasswordUser && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(15,23,42,0.58)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '18px', animation: 'modalBackdropIn 160ms ease-out' }}>
-          <form noValidate onSubmit={handleSaveResetPassword} style={{ ...commonStyles.card(theme), width: '100%', maxWidth: '440px', padding: '28px', animation: 'modalPanelIn 180ms ease-out' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '18px' }}>
-              <h3 style={{ margin: 0, fontSize: '18px' }}>Reset Password for {resetPasswordUser.username}</h3>
-              <button type="button" onClick={() => setResetPasswordUser(null)} style={{ border: 0, background: 'transparent', color: theme.muted, cursor: 'pointer' }}><X size={18} /></button>
-            </div>
-            <div style={{ display: 'grid', gap: '14px' }}>
-              <Field
-                label="New Password"
-                type="password"
-                value={resetPasswordForm.password}
-                onChange={(value) => {
-                  setResetPasswordForm(previous => ({ ...previous, password: value }));
-                  setResetPasswordErrors(previous => ({ ...previous, password: '' }));
-                }}
-                error={resetPasswordErrors.password}
-                required
-                theme={theme}
-              />
-              {resetPasswordForm.password && (
-                <div style={{ color: resetPasswordForm.password.length >= 12 && /[A-Z]/.test(resetPasswordForm.password) && /\d/.test(resetPasswordForm.password) ? theme.green : resetPasswordForm.password.length >= 8 && /[A-Z]/.test(resetPasswordForm.password) && /\d/.test(resetPasswordForm.password) ? theme.amber : theme.red, fontSize: '11px', fontWeight: 700, marginTop: '-8px' }}>
-                  Strength: {resetPasswordForm.password.length >= 12 && /[A-Z]/.test(resetPasswordForm.password) && /\d/.test(resetPasswordForm.password) ? 'Strong' : resetPasswordForm.password.length >= 8 && /[A-Z]/.test(resetPasswordForm.password) && /\d/.test(resetPasswordForm.password) ? 'Fair' : 'Weak'}
-                </div>
+      {activeTab === 'email' && isSuperAdmin && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={commonStyles.card(theme)}>
+            <h3 style={{ fontSize: '16px', fontWeight: 600, color: theme.text, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Mail size={18} style={{ color: theme.blue }} />
+              EmailJS Integration
+            </h3>
+            <p style={{ fontSize: '12px', color: theme.muted, marginBottom: '16px' }}>
+              Send automated emails via EmailJS (Gmail). No backend required. Free tier: 200 emails/month.
+            </p>
+            <details style={{ marginBottom: '16px', border: `1px solid ${theme.border}`, borderRadius: '8px', padding: '12px', backgroundColor: theme.inputBg }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: '13px' }}>Setup Guide</summary>
+              <div style={{ marginTop: '10px', fontSize: '12px', lineHeight: 1.6, color: theme.text }}>
+                <strong>STEP 1 — Create EmailJS Account</strong><br />
+                Go to <a href="https://www.emailjs.com" target="_blank" rel="noopener noreferrer" style={{ color: theme.blue }}>https://www.emailjs.com</a> → Sign Up (free)<br /><br />
+                <strong>STEP 2 — Add Gmail Service</strong><br />
+                Dashboard → Email Services → Add New Service<br />
+                Select Gmail → Connect your Google account<br />
+                Copy the SERVICE ID shown (format: service_xxxxxxx)<br /><br />
+                <strong>STEP 3 — Create Email Templates</strong><br />
+                Dashboard → Email Templates → Create New Template<br />
+                Create 5 templates — one for each email type<br />
+                Use the variable names listed in the template spec<br />
+                Copy each TEMPLATE ID (format: template_xxxxxxx)<br /><br />
+                <strong>STEP 4 — Get Your Public Key</strong><br />
+                Dashboard → Account → General<br />
+                Copy the PUBLIC KEY shown<br /><br />
+                <strong>STEP 5 — Enter Details in QA Hub</strong><br />
+                Paste Service ID, Template IDs, and Public Key into the fields below<br />
+                Set your App URL<br />
+                Toggle Enable EmailJS Integration ON<br />
+                Click Save Configuration<br />
+                Click "Send Test Email" to verify it works
+              </div>
+            </details>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>
+                <input type="checkbox" checked={appState.emailConfig?.enabled || false} onChange={(e) => setAppState(prev => ({ ...prev, emailConfig: { ...prev.emailConfig, enabled: e.target.checked } }))} style={{ width: '16px', height: '16px' }} />
+                Enable EmailJS Integration
+              </label>
+              {appState.emailConfig?.enabled && appState.emailConfig?.publicKey && appState.emailConfig?.serviceId ? (
+                <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px', backgroundColor: '#22c55e18', color: '#22c55e', fontWeight: 700 }}>✓ EmailJS Connected</span>
+              ) : appState.emailConfig?.enabled ? (
+                <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px', backgroundColor: '#ef444418', color: '#ef4444', fontWeight: 700 }}>⚠ Configuration incomplete</span>
+              ) : (
+                <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px', backgroundColor: `${theme.muted}18`, color: theme.muted, fontWeight: 700 }}>Email sending disabled</span>
               )}
-              <Field
-                label="Confirm Password"
-                type="password"
-                value={resetPasswordForm.confirm}
-                onChange={(value) => {
-                  setResetPasswordForm(previous => ({ ...previous, confirm: value }));
-                  setResetPasswordErrors(previous => ({ ...previous, confirm: '' }));
-                }}
-                error={resetPasswordErrors.confirm}
-                required
-                theme={theme}
-              />
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
-              <button type="button" onClick={() => setResetPasswordUser(null)} style={commonStyles.button(theme, 'secondary')}>Cancel</button>
-              <button type="submit" style={commonStyles.button(theme, 'primary')}>Save</button>
+            <form onSubmit={handleSaveEmailConfig} style={{ display: 'grid', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+                <Field label="EmailJS Public Key" type="text" placeholder="your_public_key_here" value={appState.emailConfig?.publicKey || ''} onChange={(v) => setAppState(prev => ({ ...prev, emailConfig: { ...prev.emailConfig, publicKey: v } }))} required={appState.emailConfig?.enabled} theme={theme} helper="Found in EmailJS Account → General → Public Key" />
+                <Field label="Service ID" type="text" placeholder="service_xxxxxxx" value={appState.emailConfig?.serviceId || ''} onChange={(v) => setAppState(prev => ({ ...prev, emailConfig: { ...prev.emailConfig, serviceId: v } }))} required={appState.emailConfig?.enabled} theme={theme} helper="Found in EmailJS → Email Services → your Gmail service" />
+                <Field label="App URL" type="url" placeholder="https://your-app-url.com" value={appState.emailConfig?.appUrl || ''} onChange={(v) => setAppState(prev => ({ ...prev, emailConfig: { ...prev.emailConfig, appUrl: v } }))} theme={theme} helper="Used as {{app_url}} in email templates" />
+                <Field label="Sender Name" type="text" placeholder="QA Hub" value={appState.emailConfig?.senderName || 'QA Hub'} onChange={(v) => setAppState(prev => ({ ...prev, emailConfig: { ...prev.emailConfig, senderName: v || 'QA Hub' } }))} theme={theme} helper="Display name in the From field" />
+                <Field label="Reply-To Email" type="email" placeholder="replies@company.com" value={appState.emailConfig?.replyTo || ''} onChange={(v) => setAppState(prev => ({ ...prev, emailConfig: { ...prev.emailConfig, replyTo: v } }))} theme={theme} helper="Where replies to automated emails go" />
+              </div>
+              <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '14px' }}>
+                <h4 style={{ margin: '0 0 12px', fontSize: '13px', fontWeight: 700, color: theme.text }}>Template IDs</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+                  <Field label="Welcome Email Template" type="text" placeholder="template_xxxxxxx" value={appState.emailConfig?.templates?.welcome || ''} onChange={(v) => setAppState(prev => ({ ...prev, emailConfig: { ...prev.emailConfig, templates: { ...prev.emailConfig.templates, welcome: v } } }))} required={appState.emailConfig?.enabled} theme={theme} helper="Sent when a new user is created" />
+                  <Field label="Weekly Summary Template" type="text" placeholder="template_xxxxxxx" value={appState.emailConfig?.templates?.weeklySummary || ''} onChange={(v) => setAppState(prev => ({ ...prev, emailConfig: { ...prev.emailConfig, templates: { ...prev.emailConfig.templates, weeklySummary: v } } }))} required={appState.emailConfig?.enabled} theme={theme} helper="Sent every Friday to Admin/Lead" />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button type="button" onClick={handleSendTestEmail} style={commonStyles.button(theme, 'secondary')}><Send size={14} /> Send Test Email</button>
+                <button type="submit" style={commonStyles.button(theme, 'primary')}><Save size={14} /> Save Configuration</button>
+              </div>
+            </form>
+          </div>
+          <div style={commonStyles.card(theme)}>
+            <details>
+              <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: '13px' }}>Email Send History ({appState.emailLog?.length || 0})</summary>
+              <div style={{ marginTop: '12px', overflowX: 'auto', maxHeight: '400px', overflowY: 'auto' }}>
+                <table style={commonStyles.table(theme)}>
+                  <thead>
+                    <tr style={{ backgroundColor: theme.inputBg }}>
+                      <th style={commonStyles.th(theme)}>Date/Time</th>
+                      <th style={commonStyles.th(theme)}>Type</th>
+                      <th style={commonStyles.th(theme)}>Recipient</th>
+                      <th style={commonStyles.th(theme)}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(appState.emailLog || []).slice(0, 20).map((entry) => (
+                      <tr key={entry.id}>
+                        <td style={commonStyles.td(theme)}>{formatDateTime(entry.sentAt)}</td>
+                        <td style={{ ...commonStyles.td(theme), textTransform: 'capitalize' }}>{entry.templateType.replace(/([A-Z])/g, ' $1')}</td>
+                        <td style={commonStyles.td(theme)}>{entry.to}</td>
+                        <td style={commonStyles.td(theme)}>
+                          {entry.status === 'sent' ? (
+                            <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#22c55e18', color: '#22c55e', fontWeight: 700 }}>Sent</span>
+                          ) : (
+                            <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#ef444418', color: '#ef4444', fontWeight: 700 }} title={entry.errorReason || ''}>Failed</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {(!appState.emailLog || appState.emailLog.length === 0) && (
+                      <tr><td colSpan={4} style={{ ...commonStyles.td(theme), textAlign: 'center', color: theme.muted, padding: '20px' }}>No emails sent yet.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'backup' && isSuperAdmin && (
+        <BackupRestore
+          currentUser={currentUser}
+          appState={appState}
+          setAppState={setAppState}
+          showToast={showToast}
+          theme={theme}
+        />
+      )}
+
+      {activeTab === 'import' && isSuperAdmin && (
+        <BulkImport
+          currentUser={currentUser}
+          appState={appState}
+          setAppState={setAppState}
+          showToast={showToast}
+          theme={theme}
+        />
+      )}
+
+      {/* In-app Generated Password Modal */}
+      {showPasswordModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => {}}>
+          <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: 12, padding: '32px 28px', width: '100%', maxWidth: 440, boxShadow: '0 20px 60px rgba(0,0,0,0.4)', animation: 'pageEnter 0.2s ease-out forwards' }}
+               onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === 'Escape') { setShowPasswordModal(false); setGeneratedPassword(''); setGeneratedUsername(''); } }}>
+            <h3 style={{ margin: '0 0 8px', fontSize: '18px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 22 }}>🔑</span> User Created Successfully
+            </h3>
+            <p style={{ fontSize: '13px', color: theme.muted, margin: '0 0 20px' }}>
+              No email address was provided for this user. Share the generated password below securely.
+            </p>
+            <label style={{ ...commonStyles.label(theme), fontSize: '12px', fontWeight: 700, marginBottom: 4 }}>Username</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: theme.inputBg, border: `1px solid ${theme.border}`, borderRadius: 8, padding: '10px 14px', color: theme.text, fontSize: 15, marginBottom: 16 }}>
+              {generatedUsername}
             </div>
-          </form>
+            <label style={{ ...commonStyles.label(theme), fontSize: '12px', fontWeight: 700, marginBottom: 4 }}>Generated Password</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: theme.inputBg, border: `1px solid ${theme.border}`, borderRadius: 8, padding: '10px 14px', fontFamily: 'monospace', fontSize: 15, color: theme.text, letterSpacing: 1, marginBottom: 12 }}>
+              <span style={{ flex: 1 }}>{showPwText ? generatedPassword : '•'.repeat(generatedPassword.length)}</span>
+              <button type="button" onClick={() => setShowPwText(v => !v)} style={{ border: 0, background: 'transparent', color: theme.muted, cursor: 'pointer', padding: 0, fontSize: 18, lineHeight: 1 }}>
+                {showPwText ? '🙈' : '👁'}
+              </button>
+              <button type="button" id="copy-pw-btn" onClick={() => {
+                navigator.clipboard.writeText(generatedPassword);
+                const btn = document.getElementById('copy-pw-btn');
+                if (btn) { btn.textContent = 'Copied ✓'; setTimeout(() => { btn.textContent = 'Copy'; }, 2000); }
+              }} style={{ ...commonStyles.button(theme, 'primary', 'sm'), whiteSpace: 'nowrap' }}>Copy</button>
+            </div>
+            <p style={{ fontSize: '11px', color: theme.amber, margin: '0 0 20px', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span>⚠</span> This password will not be shown again. The user must change it on first login.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => { setShowPasswordModal(false); setGeneratedPassword(''); setGeneratedUsername(''); setShowPwText(false); }} style={commonStyles.button(theme, 'primary')}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Password Confirmation Modal */}
+      {showResetConfirmModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: 12, padding: '32px 28px', width: '100%', maxWidth: 440, boxShadow: '0 20px 60px rgba(0,0,0,0.4)', animation: 'pageEnter 0.2s ease-out forwards' }}
+               onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === 'Escape') setShowResetConfirmModal(false); }}>
+            <h3 style={{ margin: '0 0 8px', fontSize: '18px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 22 }}>🔄</span> Reset Password for {resetTargetUser?.username}?
+            </h3>
+            <p style={{ fontSize: '13px', color: theme.muted, margin: '0 0 8px' }}>
+              A new strong password will be generated automatically by the system.
+            </p>
+            <p style={{ fontSize: '13px', color: theme.muted, margin: '0 0 20px' }}>
+              The user will be required to change their password on next login.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button type="button" onClick={() => { setShowResetConfirmModal(false); setResetTargetUser(null); }} style={commonStyles.button(theme, 'secondary')}>Cancel</button>
+              <button type="button" onClick={handleConfirmResetPassword} style={commonStyles.button(theme, 'primary')}>Reset Password</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generic Confirm Delete Modal */}
+      {confirmDelete && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: 12, padding: '32px 28px', width: '100%', maxWidth: 440, boxShadow: '0 20px 60px rgba(0,0,0,0.4)', animation: 'pageEnter 0.2s ease-out forwards' }}
+               onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === 'Escape') setConfirmDelete(null); }}>
+            <h3 style={{ margin: '0 0 12px', fontSize: '18px' }}>Confirm</h3>
+            <p style={{ fontSize: '14px', color: theme.text, margin: '0 0 24px' }}>{confirmDelete.message}</p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button type="button" onClick={() => setConfirmDelete(null)} style={commonStyles.button(theme, 'secondary')}>Cancel</button>
+              <button type="button" onClick={confirmDelete.onConfirm} style={{ ...commonStyles.button(theme, 'primary'), backgroundColor: theme.red, borderColor: theme.red }}>Confirm</button>
+            </div>
+          </div>
         </div>
       )}
 

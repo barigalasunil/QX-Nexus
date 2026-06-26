@@ -7,7 +7,7 @@ import React, { useMemo, useState } from 'react';
 import { ThemeTokens, commonStyles } from '../theme';
 import { AppState, User, WorkingDay } from '../types';
 import { exportToCSV, exportToExcel, formatDate, generateId } from '../utils';
-import { BarChart3, Bug, CalendarDays, CheckCircle2, Clock, Download, FileSpreadsheet, Loader2, Rocket, Settings, XCircle } from 'lucide-react';
+import { BarChart3, Bug, CalendarDays, CheckCircle2, Clock, Download, FileSpreadsheet, FileText, Loader2, Rocket, Settings, XCircle } from 'lucide-react';
 
 interface ExportProps {
   currentUser: User;
@@ -16,7 +16,7 @@ interface ExportProps {
   showToast: (msg: string, type: 'success' | 'error' | 'warning', duration?: number) => void;
 }
 
-type ReportKey = 'overall' | 'data' | 'defects' | 'releases' | 'timesheet' | 'builder';
+type ReportKey = 'overall' | 'data' | 'defects' | 'releases' | 'timesheet' | 'weekly' | 'builder';
 type FilterState = {
   projectId: string;
   squadId: string;
@@ -39,12 +39,13 @@ const STATUS_COLORS: Record<WorkingDay['status'], string> = {
   Weekend: '#94a3b8',
 };
 
-const reportCards = [
+const ALL_REPORT_CARDS = [
   { id: 'overall' as ReportKey, icon: BarChart3, name: 'Overall Summary', description: 'KPIs, metrics and defect breakdown' },
   { id: 'data' as ReportKey, icon: CalendarDays, name: 'Data Entries', description: 'Stories tested and TC metrics' },
   { id: 'defects' as ReportKey, icon: Bug, name: 'Defect Log', description: 'All defects with SIT miss analysis' },
   { id: 'releases' as ReportKey, icon: Rocket, name: 'Release Roadmap', description: 'Release schedules and milestones' },
   { id: 'timesheet' as ReportKey, icon: Clock, name: 'Timesheet', description: 'Attendance and shift tracking' },
+  { id: 'weekly' as ReportKey, icon: FileText, name: 'Weekly Summary', description: 'Consolidated weekly metrics snapshot' },
   { id: 'builder' as ReportKey, icon: Settings, name: 'Report Builder', description: 'Build a custom multi-section report' },
 ];
 
@@ -52,6 +53,12 @@ const sheetName = (value: string) => value.replace(/[\\/?*[\]:]/g, ' ').slice(0,
 
 export function Export({ currentUser, appState, theme, showToast }: ExportProps) {
   const now = new Date();
+  const reportCards = useMemo(() => {
+    if (currentUser.role === 'guest') {
+      return ALL_REPORT_CARDS.filter(card => card.id === 'overall' || card.id === 'defects' || card.id === 'weekly');
+    }
+    return ALL_REPORT_CARDS;
+  }, [currentUser.role]);
   const [activeReport, setActiveReport] = useState<ReportKey>('overall');
   const [loading, setLoading] = useState(false);
   const [showAllData, setShowAllData] = useState(false);
@@ -250,8 +257,8 @@ export function Export({ currentUser, appState, theme, showToast }: ExportProps)
   const squadBreakdown = breakdownRows(dataRows, defectRows, 'Squad');
   const activeFilterCount = [filters.projectId, filters.squadId, filters.release, filters.month, filters.priority, filters.sitMiss, filters.employeeId].filter(Boolean).length;
   const activeCard = reportCards.find(card => card.id === activeReport)!;
-  const recordCount = activeReport === 'overall' ? dataRows.length + defectRows.length : activeReport === 'data' ? dataRows.length : activeReport === 'defects' ? defectRows.length : activeReport === 'releases' ? releaseRows.length : activeReport === 'timesheet' ? timesheetSummary.length : builderSections().reduce((sum, section) => sum + section.rows.length, 0);
-  const canPdf = activeReport !== 'data' && activeReport !== 'timesheet';
+  const recordCount = activeReport === 'overall' ? dataRows.length + defectRows.length : activeReport === 'data' ? dataRows.length : activeReport === 'defects' ? defectRows.length : activeReport === 'releases' ? releaseRows.length : activeReport === 'timesheet' ? timesheetSummary.length : activeReport === 'weekly' ? summaryRows.length : builderSections().reduce((sum, section) => sum + section.rows.length, 0);
+  const canPdf = activeReport !== 'data' && activeReport !== 'timesheet' && activeReport !== 'weekly';
 
   function builderSections() {
     const sections = [
@@ -270,12 +277,13 @@ export function Export({ currentUser, appState, theme, showToast }: ExportProps)
     if (activeReport === 'defects') exportToExcel([{ sheetName: 'Defect Log', data: cleanRows.defects }], 'qa_hub_defect_log');
     if (activeReport === 'releases') exportToExcel([{ sheetName: 'Release Roadmap', data: cleanRows.releases }], 'qa_hub_release_roadmap');
     if (activeReport === 'timesheet') exportToExcel([{ sheetName: 'Timesheet Summary', data: timesheetSummary }], 'qa_hub_timesheet');
+    if (activeReport === 'weekly') exportToExcel([{ sheetName: 'Weekly Summary', data: summaryRows }], 'qa_hub_weekly_summary');
     if (activeReport === 'builder') exportToExcel(builderSections().map(section => ({ sheetName: sheetName(section.title), data: section.rows })), 'qa_hub_custom_report');
     showToast('Excel report downloaded.', 'success');
   };
 
   const exportCsv = () => {
-    const rows = activeReport === 'overall' ? summaryRows : activeReport === 'data' ? cleanRows.data : activeReport === 'defects' ? cleanRows.defects : activeReport === 'releases' ? cleanRows.releases : activeReport === 'timesheet' ? timesheetSummary : builderSections().flatMap(section => section.rows.map(row => ({ Section: section.title, ...row })));
+    const rows = activeReport === 'overall' ? summaryRows : activeReport === 'data' ? cleanRows.data : activeReport === 'defects' ? cleanRows.defects : activeReport === 'releases' ? cleanRows.releases : activeReport === 'timesheet' ? timesheetSummary : activeReport === 'weekly' ? summaryRows : builderSections().flatMap(section => section.rows.map(row => ({ Section: section.title, ...row })));
     exportToCSV(rows, `qa_hub_${activeReport}_report`);
     showToast('CSV downloaded.', 'success');
   };
@@ -334,6 +342,7 @@ export function Export({ currentUser, appState, theme, showToast }: ExportProps)
     }
     if (activeReport === 'releases') return renderReleaseTimeline();
     if (activeReport === 'timesheet') return renderTimesheet();
+    if (activeReport === 'weekly') return renderWeeklySummary();
     return renderBuilder();
   };
 
@@ -370,6 +379,87 @@ export function Export({ currentUser, appState, theme, showToast }: ExportProps)
       {builderReady && builderSections().map(section => <details key={section.title} open style={{ border: `1px solid ${theme.border}`, borderRadius: '8px', padding: '10px', backgroundColor: theme.inputBg }}><summary style={{ cursor: 'pointer', fontWeight: 900 }}>{section.title} <span style={pill(theme)}>{section.rows.length}</span></summary><div style={{ marginTop: '10px' }}>{renderTable(section.rows, 10)}</div></details>)}
     </div>
   );
+
+  const renderWeeklySummary = () => {
+    const now = new Date();
+    const currentWeekStart = new Date(now);
+    currentWeekStart.setDate(now.getDate() - now.getDay() + 1);
+    const currentWeekEnd = new Date(currentWeekStart);
+    currentWeekEnd.setDate(currentWeekStart.getDate() + 6);
+    const weekStartStr = currentWeekStart.toISOString().slice(0, 10);
+    const weekEndStr = currentWeekEnd.toISOString().slice(0, 10);
+    const weekLabel = `${currentWeekStart.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} - ${currentWeekEnd.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+
+    const weekEntries = appState.dataEntries.filter(e => e.date >= weekStartStr && e.date <= weekEndStr);
+    const weekDefects = appState.defects.filter(d => d.date >= weekStartStr && d.date <= weekEndStr);
+    const weekReleases = appState.releaseEntries.filter(r => r.releaseDate >= weekStartStr && r.releaseDate <= weekEndStr);
+
+    const tcCreated = weekEntries.reduce((s, e) => s + (e.tcCreated || 0), 0);
+    const tcExecuted = weekEntries.reduce((s, e) => s + (e.tcExecuted || 0), 0);
+    const tcPassed = weekEntries.reduce((s, e) => s + (e.tcPassed || 0), 0);
+    const tcFailed = weekEntries.reduce((s, e) => s + (e.tcFailed || 0), 0);
+    const p1 = weekDefects.filter(d => d.priority === 'P1').length;
+    const sitMisses = weekDefects.filter(d => d.sitMiss).length;
+
+    const summaryMetrics = [
+      { label: 'Stories Tested', value: weekEntries.length, color: theme.blue },
+      { label: 'TC Created', value: tcCreated, color: theme.indigo },
+      { label: 'TC Executed', value: tcExecuted, color: theme.indigo },
+      { label: 'TC Passed', value: tcPassed, color: theme.green },
+      { label: 'TC Failed', value: tcFailed, color: theme.red },
+      { label: 'Defects Logged', value: weekDefects.length, color: theme.orange },
+      { label: 'P1 Defects', value: p1, color: theme.red },
+      { label: 'SIT Misses', value: sitMisses, color: theme.red },
+      { label: 'Releases', value: weekReleases.length, color: theme.blue },
+    ];
+
+    return (
+      <div style={{ display: 'grid', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <FileText size={20} style={{ color: theme.blue }} />
+          <div>
+            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700 }}>Weekly Summary</h3>
+            <div style={{ color: theme.muted, fontSize: '12px' }}>{weekLabel}</div>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '8px' }}>
+          {summaryMetrics.map(m => (
+            <div key={m.label} style={{ border: `1px solid ${theme.border}`, borderRadius: '8px', padding: '10px', backgroundColor: theme.inputBg }}>
+              <div style={{ fontSize: '10px', color: theme.muted, fontWeight: 800, textTransform: 'uppercase' }}>{m.label}</div>
+              <div style={{ fontSize: '22px', fontWeight: 900, color: m.color }}>{m.value}</div>
+            </div>
+          ))}
+        </div>
+        {weekDefects.length > 0 && (
+          <div>
+            <h4 style={{ margin: '0 0 8px', fontSize: '13px', fontWeight: 700 }}>Defects This Week</h4>
+            {renderTable(weekDefects.slice(0, 10).map(d => ({
+              Date: d.date,
+              Summary: d.jiraDefectSummary,
+              Priority: d.priority,
+              Status: d.status,
+              SIT_Miss: d.sitMiss ? 'YES' : 'NO',
+            })))}
+          </div>
+        )}
+        {weekEntries.length > 0 && (
+          <div>
+            <h4 style={{ margin: '0 0 8px', fontSize: '13px', fontWeight: 700 }}>Data Entries This Week</h4>
+            {renderTable(weekEntries.slice(0, 10).map(e => ({
+              Date: e.date,
+              Story: e.jiraStorySummary,
+              Status: e.storyStatus || 'In Progress',
+              'TC Created': e.tcCreated,
+              'TC Executed': e.tcExecuted ?? '',
+            })))}
+          </div>
+        )}
+        <div style={{ color: theme.muted, fontSize: '11px', textAlign: 'center', paddingTop: '8px', borderTop: `1px solid ${theme.border}` }}>
+          Week of {weekLabel} · Generated {now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div style={{ display: 'grid', gridTemplateRows: 'auto auto 1fr', gap: '14px', minHeight: 'calc(100vh - 96px)' }}>

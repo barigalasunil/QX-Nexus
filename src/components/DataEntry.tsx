@@ -51,6 +51,7 @@ export function DataEntry({ currentUser, appState, setAppState, showToast, theme
   const [editingEntry, setEditingEntry] = useState<IDataEntry | null>(null);
   const [editForm, setEditForm] = useState<typeof form | null>(null);
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
+  const [confirmDeleteEntryId, setConfirmDeleteEntryId] = useState<string | null>(null);
   const updateForm = (key: keyof typeof form, value: any, extras: Partial<typeof form> = {}) => {
     setForm(previous => ({ ...previous, [key]: value, ...extras }));
     setErrors(previous => {
@@ -293,13 +294,18 @@ export function DataEntry({ currentUser, appState, setAppState, showToast, theme
   };
 
   const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this test entry?')) {
-      setAppState((prev) => ({
-        ...prev,
-        dataEntries: prev.dataEntries.filter((e) => e.id !== id)
-      }));
-      showToast('Entry deleted.', 'success');
-    }
+    setConfirmDeleteEntryId(id);
+  };
+
+  const handleConfirmDeleteEntry = () => {
+    const id = confirmDeleteEntryId;
+    if (!id) return;
+    setAppState((prev) => ({
+      ...prev,
+      dataEntries: prev.dataEntries.filter((e) => e.id !== id)
+    }));
+    showToast('Entry deleted.', 'success');
+    setConfirmDeleteEntryId(null);
   };
 
   const hasSetupData = appState.projects.length > 0 && appState.squads.length > 0;
@@ -590,6 +596,18 @@ export function DataEntry({ currentUser, appState, setAppState, showToast, theme
               <button type="submit" style={commonStyles.button(theme, 'primary')}>Save Changes</button>
             </div>
           </form>
+        </div>
+      )}
+      {confirmDeleteEntryId && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: 12, padding: '32px 28px', width: '100%', maxWidth: 440, boxShadow: '0 20px 60px rgba(0,0,0,0.4)' }}>
+            <h3 style={{ margin: '0 0 12px', fontSize: '18px' }}>Delete Entry?</h3>
+            <p style={{ fontSize: '14px', color: theme.text, margin: '0 0 24px' }}>Are you sure you want to delete this test entry?</p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button type="button" onClick={() => setConfirmDeleteEntryId(null)} style={commonStyles.button(theme, 'secondary')}>Cancel</button>
+              <button type="button" onClick={handleConfirmDeleteEntry} style={{ ...commonStyles.button(theme, 'primary'), backgroundColor: theme.red, borderColor: theme.red }}>Delete</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

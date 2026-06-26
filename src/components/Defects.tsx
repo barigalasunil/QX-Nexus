@@ -51,6 +51,7 @@ export function Defects({ currentUser, appState, setAppState, showToast, theme, 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [newRowId, setNewRowId] = useState<string | null>(null);
   const [statusEdit, setStatusEdit] = useState<{ id: string; status: IDefect['status']; resolvedDate: string } | null>(null);
+  const [confirmDeleteDefectId, setConfirmDeleteDefectId] = useState<string | null>(null);
   const updateForm = (key: keyof typeof form, value: any, extras: Partial<typeof form> = {}) => {
     setForm(previous => ({ ...previous, [key]: value, ...extras }));
     setErrors(previous => {
@@ -208,23 +209,28 @@ export function Defects({ currentUser, appState, setAppState, showToast, theme, 
   };
 
   const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this defect?')) {
-      setAppState((prev) => ({
-        ...prev,
-        defects: prev.defects.filter((d) => d.id !== id),
-        auditLog: [{
-          id: generateId(),
-          timestamp: new Date().toISOString(),
-          userId: currentUser.id,
-          username: currentUser.username,
-          role: currentUser.role,
-          action: 'DEFECT_DELETE',
-          details: `Deleted defect ${id}`,
-          ipHint: 'Browser session',
-        }, ...(prev.auditLog || [])].slice(0, 500),
-      }));
-      showToast('Defect removed.', 'success');
-    }
+    setConfirmDeleteDefectId(id);
+  };
+
+  const handleConfirmDeleteDefect = () => {
+    const id = confirmDeleteDefectId;
+    if (!id) return;
+    setAppState((prev) => ({
+      ...prev,
+      defects: prev.defects.filter((d) => d.id !== id),
+      auditLog: [{
+        id: generateId(),
+        timestamp: new Date().toISOString(),
+        userId: currentUser.id,
+        username: currentUser.username,
+        role: currentUser.role,
+        action: 'DEFECT_DELETE',
+        details: `Deleted defect ${id}`,
+        ipHint: 'Browser session',
+      }, ...(prev.auditLog || [])].slice(0, 500),
+    }));
+    showToast('Defect removed.', 'success');
+    setConfirmDeleteDefectId(null);
   };
 
   const getDefectAge = (defect: IDefect) => {
@@ -600,6 +606,18 @@ export function Defects({ currentUser, appState, setAppState, showToast, theme, 
           </table>
         </div>
       </div>
+      {confirmDeleteDefectId && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: 12, padding: '32px 28px', width: '100%', maxWidth: 440, boxShadow: '0 20px 60px rgba(0,0,0,0.4)' }}>
+            <h3 style={{ margin: '0 0 12px', fontSize: '18px' }}>Delete Defect?</h3>
+            <p style={{ fontSize: '14px', color: theme.text, margin: '0 0 24px' }}>Are you sure you want to delete this defect?</p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button type="button" onClick={() => setConfirmDeleteDefectId(null)} style={commonStyles.button(theme, 'secondary')}>Cancel</button>
+              <button type="button" onClick={handleConfirmDeleteDefect} style={{ ...commonStyles.button(theme, 'primary'), backgroundColor: theme.red, borderColor: theme.red }}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

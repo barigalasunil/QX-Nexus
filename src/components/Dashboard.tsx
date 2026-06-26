@@ -7,14 +7,16 @@ import React, { useMemo, useState } from 'react';
 import { ThemeTokens, commonStyles } from '../theme';
 import { AppState, User } from '../types';
 import { StatCard, FilterBar } from './Shared';
+import { Megaphone, FileText } from 'lucide-react';
 
 interface DashboardProps {
   currentUser: User;
   appState: AppState;
   theme: ThemeTokens;
+  onNavigate?: (tab: string) => void;
 }
 
-export function Dashboard({ currentUser, appState, theme }: DashboardProps) {
+export function Dashboard({ currentUser, appState, theme, onNavigate }: DashboardProps) {
   const [capacityCollapsed, setCapacityCollapsed] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState({
     projectId: currentUser.role === 'superadmin' ? '' : (currentUser.projectId || ''),
@@ -322,8 +324,64 @@ export function Dashboard({ currentUser, appState, theme }: DashboardProps) {
     return Array.from(breakdownMap.values()).filter(s => s.stories > 0 || s.defects > 0);
   }, [appState.squads, filteredData]);
 
+  const activeAnnouncements = useMemo(() => {
+    const now = new Date().toISOString().slice(0, 10);
+    return (appState.announcements || []).filter(a => {
+      if (a.expiresAt && a.expiresAt < now) return false;
+      if (!a.targetRoles.includes(currentUser.role)) return false;
+      if (a.projectId && a.projectId !== currentUser.projectId && currentUser.role !== 'superadmin') return false;
+      return true;
+    });
+  }, [appState.announcements, currentUser.role, currentUser.projectId]);
+
+  const announcementColors: Record<string, string> = {
+    info: theme.blue,
+    warning: theme.amber,
+    success: theme.green,
+    alert: theme.red,
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      {/* Active announcement banners */}
+      {activeAnnouncements.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {activeAnnouncements.map(a => {
+            const ac = announcementColors[a.type] || theme.blue;
+            return (
+              <div key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 14px', backgroundColor: `${ac}12`, border: `1px solid ${ac}40`, borderLeft: `4px solid ${ac}`, borderRadius: '8px' }}>
+                <Megaphone size={16} style={{ color: ac, flexShrink: 0, marginTop: '1px' }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: '13px', color: theme.text }}>{a.title}</div>
+                  <div style={{ fontSize: '12px', color: theme.muted, marginTop: '2px', whiteSpace: 'pre-wrap' }}>{a.message}</div>
+                  <div style={{ fontSize: '10px', color: theme.muted, marginTop: '4px' }}>Posted by {a.postedByName} · {new Date(a.postedAt).toLocaleDateString()}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {/* Guest read-only banner */}
+      {currentUser.role === 'guest' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', backgroundColor: `${theme.blue}15`, border: `1px solid ${theme.blue}40`, borderRadius: '8px', color: theme.blue, fontSize: '13px', fontWeight: 500 }}>
+          <span style={{ fontSize: '16px' }}>👁</span>
+          <span>You are viewing as a Guest. Contact your admin to request edit access.</span>
+        </div>
+      )}
+
+      {/* Weekly Summary shortcut */}
+      {currentUser.role !== 'member' && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={() => onNavigate?.('export')}
+            style={{ ...commonStyles.button(theme, 'primary', 'sm'), display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            <FileText size={14} />
+            View Weekly Summary Report
+          </button>
+        </div>
+      )}
       {/* Top filter bar */}
       <FilterBar
         projects={appState.projects}

@@ -16,7 +16,9 @@ import {
   Settings as SettingsIcon,
   LogOut,
   Sun,
-  Moon
+  Moon,
+  Megaphone,
+  CalendarCheck2
 } from 'lucide-react';
 import { ThemeTokens } from '../theme';
 import { User } from '../types';
@@ -46,13 +48,15 @@ export function Sidebar({
   theme
 }: SidebarProps) {
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['superadmin', 'admin', 'lead'] },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['superadmin', 'admin', 'lead', 'guest'] },
     { id: 'dataEntry', label: 'Data Entry', icon: Database, roles: ['superadmin', 'admin', 'lead', 'member'] },
     { id: 'defects', label: 'Defects', icon: AlertTriangle, roles: ['superadmin', 'admin', 'lead', 'member'] },
     { id: 'releases', label: 'Releases', icon: Layers, roles: ['superadmin', 'admin', 'lead', 'member'] },
     { id: 'timesheet', label: 'Timesheet', icon: Clock, roles: ['superadmin', 'admin', 'lead', 'member'] },
-    { id: 'teamStructure', label: 'Team Structure', icon: Network, roles: ['superadmin', 'admin', 'lead'] },
-    { id: 'export', label: 'Export', icon: Download, roles: ['superadmin', 'admin', 'lead'] },
+    { id: 'leaveRequests', label: 'Leave Requests', icon: CalendarCheck2, roles: ['superadmin', 'admin', 'lead', 'member'] },
+    { id: 'teamStructure', label: 'Team Structure', icon: Network, roles: ['superadmin', 'admin', 'lead', 'guest'] },
+    { id: 'announcements', label: 'Announcements', icon: Megaphone, roles: ['superadmin', 'admin'] },
+    { id: 'export', label: 'Export', icon: Download, roles: ['superadmin', 'admin', 'lead', 'guest'] },
     { id: 'settings', label: 'Settings', icon: SettingsIcon, roles: ['superadmin', 'admin'] },
   ];
 
@@ -66,6 +70,7 @@ export function Sidebar({
     admin: '#6366f1',
     lead: '#3b82f6',
     member: '#22c55e',
+    guest: '#0d9488',
   }[currentUser.role];
 
   return (

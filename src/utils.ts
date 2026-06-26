@@ -47,9 +47,19 @@ export const DEFAULT_PERMISSIONS = {
     holidayList: 'none',
     settings: 'none',
   },
+  guest: {
+    dashboard: 'view',
+    dataEntry: 'none',
+    defects: 'none',
+    releases: 'none',
+    timesheet: 'none',
+    export: 'view',
+    holidayList: 'none',
+    settings: 'none',
+  },
 } as const;
 
-export const getPermissionsForRole = (role: 'superadmin' | 'admin' | 'lead' | 'member'): UserPermissions => {
+export const getPermissionsForRole = (role: 'superadmin' | 'admin' | 'lead' | 'member' | 'guest'): UserPermissions => {
   return { ...DEFAULT_PERMISSIONS[role] };
 };
 
@@ -87,7 +97,7 @@ export const scopeAppStateForUser = (state: AppState, user: User): AppState => {
   const projectUsers = state.users.filter((u) => {
     if (u.id === user.id) return true;
     if (u.projectId !== projectId) return false;
-    if (user.role === 'admin') return true;
+    if (user.role === 'admin' || user.role === 'guest') return true;
     return u.squadId === squadId;
   });
   const visibleUserIds = new Set(projectUsers.map((u) => u.id));
@@ -214,6 +224,130 @@ export const exportToExcel = (sheets: { sheetName: string; data: any[] }[], file
     console.error('Failed to export to Excel', error);
   }
 };
+
+export function generateStrongPassword(): string {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghjkmnpqrstuvwxyz';
+  const digits = '23456789';
+  const special = '@#$!';
+  const all = upper + lower + digits + special;
+  const pick = (str: string) => str[Math.floor(Math.random() * str.length)];
+  const rand = Array.from({ length: 5 }, () => pick(all));
+  const password = [
+    pick(upper), pick(upper),
+    pick(lower), pick(lower),
+    pick(digits), pick(digits),
+    pick(special),
+    ...rand,
+  ].sort(() => Math.random() - 0.5).join('');
+  return password;
+}
+
+export function maskEmail(email: string): string {
+  const atIndex = email.indexOf('@');
+  if (atIndex < 4) return email.slice(0, 1) + '***' + email.slice(atIndex);
+  return email.slice(0, 3) + '***' + email.slice(atIndex);
+}
+
+export const LOGIN_INSTRUCTIONS_TEXT = `
+HOW TO LOG IN:
+1. Open the App URL in your browser
+2. Enter your username and password
+3. On first login you will be prompted to change your password
+4. Choose a strong password (min 8 characters, one uppercase letter, one number)
+
+HOW TO LOG OUT:
+- Click the sign out button at the bottom of the left sidebar
+- Your session automatically locks after 10 minutes of inactivity
+- Closing your browser tab ends your session
+`;
+
+export function getRoleSummary(role: string): string {
+  const summaries: Record<string, string> = {
+    superadmin: 'You have full access to the entire QA Hub platform across all projects. You are responsible for platform setup, user management, and organisation-wide oversight.',
+    admin: 'You have full access within your assigned project. You manage your team, oversee QA activities, approve leave, and export project reports.',
+    lead: 'You manage your squad. You review metrics, approve your team\'s leave requests, and log your own QA work.',
+    member: 'You log your daily QA work — stories tested, defects found, and your monthly timesheet.',
+    guest: 'You have read-only access to the Dashboard metrics and Team Structure for your project. You can download summary reports.',
+  };
+  return summaries[role] || '';
+}
+
+export function getFirstSteps(role: string): string {
+  const steps: Record<string, string> = {
+    superadmin: '1. Change your default password immediately\n2. Add your Projects in Settings\n3. Add Squads under each Project\n4. Create Admin accounts for each Project\n5. Add Releases and Holiday List',
+    admin: '1. Change your default password immediately\n2. Create Lead accounts for your squads\n3. Ensure team members are correctly assigned\n4. Add your project\'s releases',
+    lead: '1. Change your default password immediately\n2. Review your squad members in Team Structure\n3. Start logging data entries and defects\n4. Check the Dashboard for your project metrics',
+    member: '1. Change your default password immediately\n2. Fill your timesheet for the current month\n3. Start logging stories tested and defects found',
+    guest: '1. Change your default password immediately\n2. Visit the Dashboard to view project metrics\n3. Use Export to download summary reports',
+  };
+  return steps[role] || '';
+}
+
+export function getCurrentWeekRange(): { weekStart: string; weekEnd: string; weekRange: string } {
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() + diff);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+  const weekStartStr = weekStart.toISOString().slice(0, 10);
+  const weekEndStr = weekEnd.toISOString().slice(0, 10);
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const ws = `${weekStart.getDate()} ${months[weekStart.getMonth()]}`;
+  const we = `${weekEnd.getDate()} ${months[weekEnd.getMonth()]} ${weekEnd.getFullYear()}`;
+  return { weekStart: weekStartStr, weekEnd: weekEndStr, weekRange: `${ws} – ${we}` };
+}
+
+export function computeWeekMetrics(appState: AppState, weekStart: string, weekEnd: string) {
+  const entries = appState.dataEntries.filter(e => e.date >= weekStart && e.date <= weekEnd);
+  const defects = appState.defects.filter(d => d.date >= weekStart && d.date <= weekEnd);
+  const tcCreated = entries.reduce((s, e) => s + (e.tcCreated || 0), 0);
+  const tcExecuted = entries.reduce((s, e) => s + (e.tcExecuted || 0), 0);
+  const tcPassed = entries.reduce((s, e) => s + (e.tcPassed || 0), 0);
+  const tcFailed = entries.reduce((s, e) => s + (e.tcFailed || 0), 0);
+  const passRate = tcExecuted > 0 ? Math.round((tcPassed / tcExecuted) * 100) : 0;
+  return {
+    stories: entries.length,
+    tcCreated,
+    tcExecuted,
+    tcPassed,
+    tcFailed,
+    passRate,
+    defects: defects.length,
+    sitMisses: defects.filter(d => d.sitMiss).length,
+    p1: defects.filter(d => d.priority === 'P1').length,
+    p2: defects.filter(d => d.priority === 'P2').length,
+    p3: defects.filter(d => d.priority === 'P3').length,
+  };
+}
+
+export async function sendEmailJS(
+  config: { enabled: boolean; publicKey: string; serviceId: string; senderName: string; replyTo: string; appUrl: string },
+  templateId: string,
+  templateParams: Record<string, any>
+): Promise<{ success: boolean; reason?: string }> {
+  if (!config.enabled || !config.publicKey || !config.serviceId || !templateId) {
+    return { success: false, reason: 'EmailJS not configured or disabled' };
+  }
+  const w = window as any;
+  if (!w.emailjs) {
+    return { success: false, reason: 'EmailJS SDK not loaded' };
+  }
+  try {
+    await w.emailjs.send(config.serviceId, templateId, {
+      ...templateParams,
+      sender_name: config.senderName || 'QA Hub',
+      reply_to: config.replyTo || '',
+      app_url: config.appUrl || '[ App URL — please update in Settings → Email Config ]',
+    });
+    return { success: true };
+  } catch (err: any) {
+    console.error('EmailJS send failed:', err);
+    return { success: false, reason: err?.text || err?.message || 'Unknown error' };
+  }
+}
 
 export const exportToCSV = (data: any[], fileName: string) => {
   try {
