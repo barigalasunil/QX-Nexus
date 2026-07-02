@@ -137,7 +137,6 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
   const today = new Date();
   const [attendanceMonth, setAttendanceMonth] = useState(today.getMonth() + 1);
   const [attendanceYear, setAttendanceYear] = useState(today.getFullYear());
-  const [attendanceUserId, setAttendanceUserId] = useState(currentUser.id);
 
   const todayStr = today.toISOString().slice(0, 10);
   const hour = today.getHours();
@@ -296,11 +295,9 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
 
   // ---- Recognitions ----
   const projectRecognitions = useMemo(() => {
-    const recogs = currentUser.role === 'superadmin'
-      ? appState.recognitions
-      : appState.recognitions.filter(r => r.projectId === currentUser.projectId);
+    const recogs = appState.recognitions.filter(r => r.fromUserId === currentUser.id || r.toUserId === currentUser.id);
     return recogs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [appState.recognitions, currentUser]);
+  }, [appState.recognitions, currentUser.id]);
 
   const recentRecognitions = projectRecognitions.slice(0, 5);
 
@@ -378,18 +375,7 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
   }, [currentUser]);
 
   // ---- Attendance tracking ----
-  const canViewOthersAttendance = ['lead', 'admin', 'superadmin'].includes(currentUser.role);
-  const attendanceUserList = useMemo(() => {
-    if (currentUser.role === 'superadmin') return appState.users;
-    if (currentUser.role === 'admin') return appState.users.filter(u => u.projectId === currentUser.projectId);
-    if (currentUser.role === 'lead') return appState.users.filter(u => u.projectId === currentUser.projectId);
-    return [currentUser];
-  }, [appState.users, currentUser]);
-
-  const attendanceTargetUser = useMemo(() => {
-    if (!canViewOthersAttendance) return currentUser;
-    return appState.users.find(u => u.id === attendanceUserId) || currentUser;
-  }, [appState.users, attendanceUserId, currentUser, canViewOthersAttendance]);
+  const attendanceTargetUser = currentUser;
 
   const attendanceStats = useMemo(() =>
     computeLocationStats(appState.timesheetEntries, attendanceTargetUser, attendanceYear, attendanceMonth),
@@ -523,14 +509,6 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
               📍 {attendanceTargetUser.id !== currentUser.id ? attendanceTargetUser.username + "'s " : ''}Office Attendance Tracker — {attendanceMonthLabel}
             </h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px' }}>
-              {canViewOthersAttendance && (
-                <select value={attendanceUserId} onChange={e => setAttendanceUserId(e.target.value)} style={{ ...commonStyles.select(theme, true), minWidth: '140px', fontSize: '12px' }}>
-                  <option value={currentUser.id}>Myself</option>
-                  {attendanceUserList.filter(u => u.id !== currentUser.id).map(u => (
-                    <option key={u.id} value={u.id}>{u.username}</option>
-                  ))}
-                </select>
-              )}
               <button type="button" onClick={() => handleAttendanceMonth(-1)} style={{ border: 0, background: 'transparent', color: theme.muted, cursor: 'pointer', display: 'flex', padding: '4px' }}><ChevronLeft size={16} /></button>
               <span style={{ fontWeight: 700, minWidth: '100px', textAlign: 'center' }}>{attendanceMonthLabel}</span>
               <button type="button" onClick={() => handleAttendanceMonth(1)} style={{ border: 0, background: 'transparent', color: theme.muted, cursor: 'pointer', display: 'flex', padding: '4px' }}><ChevronRight size={16} /></button>

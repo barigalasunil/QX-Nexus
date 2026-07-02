@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ThemeTokens, commonStyles } from '../theme';
 import { AppState, User } from '../types';
 import { StatCard, FilterBar } from './Shared';
@@ -20,24 +20,80 @@ export function Dashboard({ currentUser, appState, theme, onNavigate }: Dashboar
   const [capacityCollapsed, setCapacityCollapsed] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState({
     projectId: currentUser.role === 'superadmin' ? '' : (currentUser.projectId || ''),
-    squadId: '',
+    squadId: currentUser.role === 'lead' || currentUser.role === 'member' ? (currentUser.squadId || '') : '',
     release: '',
     month: '',
     sprintId: '',
+    memberId: '',
   });
+
+  const isSuperAdmin = currentUser.role === 'superadmin';
+  const isAdmin = currentUser.role === 'admin';
+  const canUseDashboardFilters = isSuperAdmin || isAdmin;
+  const effectiveProjectId = isSuperAdmin ? filters.projectId : (currentUser.projectId || '');
+  const effectiveSquadId = currentUser.role === 'lead' || currentUser.role === 'member'
+    ? (currentUser.squadId || '')
+    : filters.squadId;
+  const effectiveMemberId = canUseDashboardFilters ? filters.memberId : '';
+
+  useEffect(() => {
+    setFilters(prev => {
+      const nextProjectId = isSuperAdmin ? prev.projectId : (currentUser.projectId || '');
+      const nextSquadId = currentUser.role === 'lead' || currentUser.role === 'member'
+        ? (currentUser.squadId || '')
+        : prev.squadId;
+      const nextMemberId = canUseDashboardFilters ? prev.memberId : '';
+      if (prev.projectId === nextProjectId && prev.squadId === nextSquadId && prev.memberId === nextMemberId) {
+        return prev;
+      }
+      return { ...prev, projectId: nextProjectId, squadId: nextSquadId, memberId: nextMemberId };
+    });
+  }, [canUseDashboardFilters, currentUser.projectId, currentUser.role, currentUser.squadId, isSuperAdmin]);
+
+  const dashboardProjects = useMemo(() => {
+    if (isSuperAdmin) return appState.projects;
+    return appState.projects.filter(project => project.id === currentUser.projectId);
+  }, [appState.projects, currentUser.projectId, isSuperAdmin]);
+
+  const dashboardSquads = useMemo(() => {
+    if (currentUser.role === 'lead' || currentUser.role === 'member') {
+      return appState.squads.filter(squad => squad.id === currentUser.squadId);
+    }
+    if (effectiveProjectId) {
+      return appState.squads.filter(squad => squad.projectId === effectiveProjectId);
+    }
+    return appState.squads;
+  }, [appState.squads, currentUser.role, currentUser.squadId, effectiveProjectId]);
+
+  const dashboardMembers = useMemo(() => {
+    return appState.users
+      .filter(user => !effectiveProjectId || user.projectId === effectiveProjectId)
+      .filter(user => !effectiveSquadId || user.squadId === effectiveSquadId)
+      .sort((a, b) => a.username.localeCompare(b.username));
+  }, [appState.users, effectiveProjectId, effectiveSquadId]);
+
+  useEffect(() => {
+    if (!filters.memberId) return;
+    if (dashboardMembers.some(member => member.id === filters.memberId)) return;
+    setFilters(prev => ({ ...prev, memberId: '' }));
+  }, [dashboardMembers, filters.memberId]);
 
   // Filter Data Entries and Defects based on criteria
   const filteredData = useMemo(() => {
     let entries = [...appState.dataEntries];
     let defects = [...appState.defects];
 
-    if (filters.projectId) {
-      entries = entries.filter((e) => e.projectId === filters.projectId);
-      defects = defects.filter((d) => d.projectId === filters.projectId);
+    if (effectiveProjectId) {
+      entries = entries.filter((e) => e.projectId === effectiveProjectId);
+      defects = defects.filter((d) => d.projectId === effectiveProjectId);
     }
-    if (filters.squadId) {
-      entries = entries.filter((e) => e.squadId === filters.squadId);
-      defects = defects.filter((d) => d.squadId === filters.squadId);
+    if (effectiveSquadId) {
+      entries = entries.filter((e) => e.squadId === effectiveSquadId);
+      defects = defects.filter((d) => d.squadId === effectiveSquadId);
+    }
+    if (effectiveMemberId) {
+      entries = entries.filter((e) => e.addedBy === effectiveMemberId);
+      defects = defects.filter((d) => d.addedBy === effectiveMemberId);
     }
     if (filters.release) {
       entries = entries.filter((e) => e.release === filters.release);
@@ -53,7 +109,7 @@ export function Dashboard({ currentUser, appState, theme, onNavigate }: Dashboar
     }
 
     return { entries, defects };
-  }, [appState.dataEntries, appState.defects, filters]);
+  }, [appState.dataEntries, appState.defects, effectiveMemberId, effectiveProjectId, effectiveSquadId, filters]);
 
   // Aggregate Metrics
   const metrics = useMemo(() => {
@@ -113,14 +169,16 @@ export function Dashboard({ currentUser, appState, theme, onNavigate }: Dashboar
     const prevMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
     const entries = appState.dataEntries
       .filter(entry => entry.date?.slice(0, 7) === prevMonth)
-      .filter(entry => !filters.projectId || entry.projectId === filters.projectId)
-      .filter(entry => !filters.squadId || entry.squadId === filters.squadId)
+      .filter(entry => !effectiveProjectId || entry.projectId === effectiveProjectId)
+      .filter(entry => !effectiveSquadId || entry.squadId === effectiveSquadId)
+      .filter(entry => !effectiveMemberId || entry.addedBy === effectiveMemberId)
       .filter(entry => !filters.release || entry.release === filters.release)
       .filter(entry => !filters.sprintId || entry.sprintId === filters.sprintId);
     const defects = appState.defects
       .filter(defect => defect.date?.slice(0, 7) === prevMonth)
-      .filter(defect => !filters.projectId || defect.projectId === filters.projectId)
-      .filter(defect => !filters.squadId || defect.squadId === filters.squadId)
+      .filter(defect => !effectiveProjectId || defect.projectId === effectiveProjectId)
+      .filter(defect => !effectiveSquadId || defect.squadId === effectiveSquadId)
+      .filter(defect => !effectiveMemberId || defect.addedBy === effectiveMemberId)
       .filter(defect => !filters.release || defect.release === filters.release)
       .filter(defect => !filters.sprintId || defect.sprintId === filters.sprintId);
     if (!entries.length && !defects.length) return null;
@@ -147,7 +205,7 @@ export function Dashboard({ currentUser, appState, theme, onNavigate }: Dashboar
       failRatePct: executed > 0 ? (failed / executed) * 100 : null,
       sitMissPct: defects.length > 0 ? (sitMisses / defects.length) * 100 : null,
     };
-  }, [appState.dataEntries, appState.defects, filters]);
+  }, [appState.dataEntries, appState.defects, effectiveMemberId, effectiveProjectId, effectiveSquadId, filters]);
 
   const trend = (key: keyof typeof metrics, lowerIsBetter = false) => {
     if (!filters.month || !previousMetrics) return { label: '— No previous data', color: theme.muted };
@@ -188,11 +246,15 @@ export function Dashboard({ currentUser, appState, theme, onNavigate }: Dashboar
   const squadCapacity = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
     return appState.squads
-      .filter(squad => currentUser.role === 'superadmin' || squad.projectId === currentUser.projectId)
+      .filter(squad => {
+        if (currentUser.role === 'superadmin') return !filters.projectId || squad.projectId === filters.projectId;
+        if (currentUser.role === 'lead' || currentUser.role === 'member') return squad.id === currentUser.squadId;
+        return squad.projectId === currentUser.projectId;
+      })
       .map(squad => {
       const members = appState.users
         .filter(user => user.squadId === squad.id)
-        .filter(user => currentUser.role !== 'lead' || user.reportsTo === currentUser.id || (currentUser.directReports || []).includes(user.id));
+        .filter(user => !effectiveMemberId || user.id === effectiveMemberId);
       return {
         squad,
         members: members.map(member => {
@@ -403,19 +465,38 @@ export function Dashboard({ currentUser, appState, theme, onNavigate }: Dashboar
         </div>
       )}
       {/* Top filter bar */}
-      <FilterBar
-        projects={appState.projects}
-        squads={appState.squads}
-        dataEntries={appState.dataEntries}
-        defects={appState.defects}
-        releaseNames={appState.releaseNames || []}
-        sprints={appState.sprints || []}
-        filters={filters}
-        setFilters={setFilters}
-        theme={theme}
-        showProject={currentUser.role === 'superadmin'}
-        lockedProjectId={currentUser.role === 'superadmin' ? undefined : (currentUser.projectId || '')}
-      />
+      {canUseDashboardFilters && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <FilterBar
+            projects={dashboardProjects}
+            squads={dashboardSquads}
+            dataEntries={appState.dataEntries}
+            defects={appState.defects}
+            releaseNames={appState.releaseNames || []}
+            sprints={appState.sprints || []}
+            filters={filters}
+            setFilters={setFilters}
+            theme={theme}
+            showProject={isSuperAdmin}
+            lockedProjectId={isSuperAdmin ? undefined : (currentUser.projectId || '')}
+          />
+          <div style={{ ...commonStyles.card(theme), display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end', padding: '8px 12px' }}>
+            <div style={{ flex: '0 1 auto', minWidth: '160px' }}>
+              <label style={{ ...commonStyles.label(theme), fontSize: '10px', marginBottom: '2px' }}>Member</label>
+              <select
+                value={filters.memberId}
+                onChange={(event) => setFilters(prev => ({ ...prev, memberId: event.target.value }))}
+                style={commonStyles.select(theme)}
+              >
+                <option value="">All Members</option>
+                {dashboardMembers.map(member => (
+                  <option key={member.id} value={member.id}>{member.username}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Metrics Cards Grid */}
       <div key={JSON.stringify(filters)} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '8px' }}>

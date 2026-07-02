@@ -135,19 +135,36 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
   }, [appState.squads, currentUser.projectId, isAdmin, userForm.projectId]);
 
   const reportsToOptions = useMemo(() => {
-    const projectId = isAdmin ? currentUser.projectId : userForm.projectId;
-    if (userForm.role === 'member') {
+    return getReportingManagerOptions(userForm.role, isAdmin ? currentUser.projectId : userForm.projectId);
+  }, [appState.users, currentUser.projectId, isAdmin, userForm.projectId, userForm.role]);
+
+  function getReportingManagerOptions(role: User['role'], projectId?: string | null, excludeUserId?: string) {
+    if (role === 'lead') {
       return appState.users
-        .filter(user => user.role === 'lead' && (!projectId || user.projectId === projectId))
+        .filter(user => user.id !== excludeUserId)
+        .filter(user => user.role === 'admin' || user.role === 'superadmin')
+        .filter(user => user.role === 'superadmin' || !projectId || user.projectId === projectId)
         .map(user => ({ value: user.id, label: `${user.username}${user.jobTitle ? ` - ${user.jobTitle}` : ''}` }));
     }
-    if (userForm.role === 'lead') {
+    if (role === 'member') {
       return appState.users
-        .filter(user => user.role === 'admin' && (!projectId || user.projectId === projectId))
+        .filter(user => user.id !== excludeUserId)
+        .filter(user => user.role === 'lead' || user.role === 'admin')
+        .filter(user => !projectId || user.projectId === projectId)
         .map(user => ({ value: user.id, label: `${user.username}${user.jobTitle ? ` - ${user.jobTitle}` : ''}` }));
     }
     return [];
-  }, [appState.users, currentUser.projectId, isAdmin, userForm.projectId, userForm.role]);
+  }
+
+  useEffect(() => {
+    if (userForm.role !== 'lead' && userForm.role !== 'member') {
+      if (userForm.reportsTo) setUserForm(prev => ({ ...prev, reportsTo: '' }));
+      return;
+    }
+    if (userForm.reportsTo && !reportsToOptions.some(option => option.value === userForm.reportsTo)) {
+      setUserForm(prev => ({ ...prev, reportsTo: '' }));
+    }
+  }, [reportsToOptions, userForm.reportsTo, userForm.role]);
 
   const visibleUsers = useMemo(() => (
     isSuperAdmin
@@ -183,6 +200,11 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       nextErrors.projectId = userForm.role === 'admin' ? 'Project is required for Admin' : 'Project is required.';
     }
     if ((userForm.role === 'lead' || userForm.role === 'member') && !userForm.squadId) nextErrors.squadId = 'Squad is required.';
+    if ((userForm.role === 'lead' || userForm.role === 'member') && !userForm.reportsTo) {
+      nextErrors.reportsTo = 'Reporting Manager is required.';
+    } else if ((userForm.role === 'lead' || userForm.role === 'member') && !reportsToOptions.some(option => option.value === userForm.reportsTo)) {
+      nextErrors.reportsTo = 'Select a valid Reporting Manager for this role.';
+    }
     setUserErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
 
@@ -215,7 +237,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       loginCount: 0,
       failedLoginAttempts: 0,
       lockedUntil: null,
-      reportsTo: (userForm.role === 'superadmin' || userForm.role === 'guest' || userForm.role === 'admin') ? null : userForm.reportsTo,
+      reportsTo: (userForm.role === 'lead' || userForm.role === 'member') ? userForm.reportsTo : null,
       directReports: [],
       baseOffice: userForm.baseOffice || 'Bengaluru',
       birthday: userForm.birthdayDay && userForm.birthdayMonth
@@ -339,6 +361,38 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       }, ...(prev.auditLog || [])].slice(0, 500),
     }));
     showToast('Base Office updated successfully!', 'success');
+  };
+
+  const handleReportingManagerChange = (userId: string, reportsTo: string) => {
+    const target = appState.users.find(user => user.id === userId);
+    if (!target || target.role === 'superadmin' || target.role === 'admin') return;
+    const validOptions = getReportingManagerOptions(target.role, target.projectId, target.id);
+    if (reportsTo && !validOptions.some(option => option.value === reportsTo)) {
+      showToast('Select a valid Reporting Manager for this role.', 'error');
+      return;
+    }
+    if ((target.reportsTo || '') === reportsTo) return;
+
+    setAppState((prev) => ({
+      ...prev,
+      users: prev.users.map((user) => {
+        if (user.id === userId) return { ...user, reportsTo: reportsTo || null };
+        if (user.id === target.reportsTo) return { ...user, directReports: (user.directReports || []).filter(id => id !== userId) };
+        if (user.id === reportsTo) return { ...user, directReports: Array.from(new Set([...(user.directReports || []), userId])) };
+        return user;
+      }),
+      auditLog: [{
+        id: generateId(),
+        timestamp: new Date().toISOString(),
+        userId: currentUser.id,
+        username: currentUser.username,
+        role: currentUser.role,
+        action: 'PERMISSION_CHANGE',
+        details: `Updated reporting manager for ${target.username}`,
+        ipHint: 'Browser session',
+      }, ...(prev.auditLog || [])].slice(0, 500),
+    }));
+    showToast('Reporting Manager updated successfully!', 'success');
   };
 
   const handlePromoteToLead = (userId: string) => {
@@ -827,7 +881,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                 type="select"
                 value={userForm.role}
                 onChange={(v) => {
-                  updateUserForm('role', v, { squadId: '', projectId: isAdmin ? (currentUser.projectId || '') : '' });
+                  updateUserForm('role', v, { squadId: '', projectId: isAdmin ? (currentUser.projectId || '') : '', reportsTo: '' });
                   setUserPermissions(getPermissionsForRole(v as any));
                 }}
                 options={allowedRoles.map(role => ({
@@ -843,7 +897,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                 label="Assigned Project"
                 type="select"
                 value={userForm.projectId}
-                onChange={(v) => updateUserForm('projectId', v, { squadId: '' })}
+                onChange={(v) => updateUserForm('projectId', v, { squadId: '', reportsTo: '' })}
                 options={projectOptions}
                 placeholder="Select project"
                 required
@@ -955,6 +1009,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                     <th style={commonStyles.th(theme)}>Username</th>
                     <th style={commonStyles.th(theme)}>Role</th>
                     <th style={commonStyles.th(theme)}>Squad Assigned</th>
+                    <th style={commonStyles.th(theme)}>Reporting Manager</th>
                     {isSuperAdmin && <th style={commonStyles.th(theme)}>Project</th>}
                     <th style={commonStyles.th(theme)}>Base Office</th>
                     <th style={commonStyles.th(theme)}>Permissions</th>
@@ -985,6 +1040,22 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                             )}
                           </td>
                           <td style={commonStyles.td(theme)}>{squadMap.get(u.squadId || '') || '—'}</td>
+                          <td style={commonStyles.td(theme)}>
+                            {(u.role === 'lead' || u.role === 'member') && canEditSettings ? (
+                              <select
+                                value={u.reportsTo || ''}
+                                onChange={event => handleReportingManagerChange(u.id, event.target.value)}
+                                style={{ ...commonStyles.select(theme, true), minWidth: 150, fontSize: 12 }}
+                              >
+                                <option value="">Select manager</option>
+                                {getReportingManagerOptions(u.role, u.projectId, u.id).map(option => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              appState.users.find(user => user.id === u.reportsTo)?.username || '—'
+                            )}
+                          </td>
                           {isSuperAdmin && <td style={commonStyles.td(theme)}>{projectMap.get(u.projectId || '') || 'All Projects'}</td>}
                           <td style={commonStyles.td(theme)}>
                             {canEditSettings && u.id !== 'superadmin' ? (
@@ -1061,7 +1132,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                         </tr>
                         {isEditing && editingPermissionsVal && (
                           <tr>
-                            <td colSpan={isSuperAdmin ? 7 : 6} style={{ ...commonStyles.td(theme), backgroundColor: `${theme.inputBg}cc`, padding: '16px' }}>
+                            <td colSpan={isSuperAdmin ? 8 : 7} style={{ ...commonStyles.td(theme), backgroundColor: `${theme.inputBg}cc`, padding: '16px' }}>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '600px', opacity: 1, overflow: 'hidden', transition: 'max-height 0.3s ease, opacity 0.3s ease' }}>
                                 <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: theme.text }}>
                                   Edit Page Permissions for <span style={{ color: theme.blue }}>{u.username}</span>

@@ -239,6 +239,7 @@ interface FilterBarProps {
     release: string;
     month: string;
     sprintId?: string;
+    memberId?: string;
   };
   setFilters: React.Dispatch<React.SetStateAction<{
     projectId: string;
@@ -246,6 +247,7 @@ interface FilterBarProps {
     release: string;
     month: string;
     sprintId?: string;
+    memberId?: string;
   }>>;
   theme: ThemeTokens;
   showProject?: boolean;
@@ -274,10 +276,10 @@ export function FilterBar({ projects, squads, dataEntries, defects, releaseNames
     return Array.from(monthsSet).sort().reverse();
   }, [dataEntries, defects]);
 
-  const hasActiveFilters = filters.projectId || filters.squadId || filters.release || filters.sprintId || filters.month;
+  const hasActiveFilters = filters.projectId || filters.squadId || filters.release || filters.sprintId || filters.month || filters.memberId;
 
   const handleClear = () => {
-    setFilters(previous => ({ ...previous, projectId: lockedProjectId || '', squadId: '', release: '', sprintId: '', month: '' }));
+    setFilters(previous => ({ ...previous, projectId: lockedProjectId || '', squadId: '', release: '', sprintId: '', month: '', memberId: '' }));
   };
 
   return (
@@ -302,7 +304,7 @@ export function FilterBar({ projects, squads, dataEntries, defects, releaseNames
         <label style={{ ...commonStyles.label(theme), fontSize: '10px', marginBottom: '2px' }}>Project</label>
         <select
           value={filters.projectId}
-          onChange={(e) => setFilters(prev => ({ ...prev, projectId: e.target.value }))}
+          onChange={(e) => setFilters(prev => ({ ...prev, projectId: e.target.value, squadId: '', memberId: '' }))}
           style={commonStyles.select(theme)}
         >
           <option value="">All Projects</option>
@@ -317,7 +319,7 @@ export function FilterBar({ projects, squads, dataEntries, defects, releaseNames
         <label style={{ ...commonStyles.label(theme), fontSize: '10px', marginBottom: '2px' }}>Squad</label>
         <select
           value={filters.squadId}
-          onChange={(e) => setFilters(prev => ({ ...prev, squadId: e.target.value }))}
+          onChange={(e) => setFilters(prev => ({ ...prev, squadId: e.target.value, memberId: '' }))}
           style={commonStyles.select(theme)}
         >
           <option value="">All Squads</option>

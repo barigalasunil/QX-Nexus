@@ -499,8 +499,8 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
       background: selected ? color : theme.card,
       color: selected ? '#ffffff' : theme.text,
       borderRadius: 999,
-      padding: '10px 12px',
-      minHeight: 42,
+      padding: '12px 14px',
+      minHeight: 48,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'flex-start',
@@ -513,7 +513,9 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
 
     return createPortal(
       <div
-        onClick={closePopover}
+        onMouseDown={event => {
+          if (event.target === event.currentTarget) closePopover();
+        }}
         style={{
           position: 'fixed',
           inset: 0,
@@ -526,6 +528,8 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
         }}
       >
         <div
+          onPointerDown={e => e.stopPropagation()}
+          onMouseDown={e => e.stopPropagation()}
           onClick={e => e.stopPropagation()}
           style={{
             background: theme.card,
@@ -560,11 +564,12 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
                 background: theme.inputBg,
                 color: theme.text,
                 borderRadius: 8,
-                width: 32,
-                height: 32,
+                width: 40,
+                height: 40,
                 cursor: 'pointer',
                 fontSize: 20,
                 lineHeight: 1,
+                flexShrink: 0,
               }}
             >
               ×
@@ -587,6 +592,7 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
                       key={option.label}
                       type="button"
                       disabled={!canEditFullDay}
+                      onPointerDown={e => e.stopPropagation()}
                       onClick={() => setField('status', option.value)}
                       style={{ ...chipStyle(selected, option.color), opacity: canEditFullDay ? 1 : 0.58, cursor: canEditFullDay ? 'pointer' : 'not-allowed' }}
                     >
@@ -610,6 +616,7 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
                         key={location}
                         type="button"
                         disabled={!canEditWorkLocation}
+                        onPointerDown={e => e.stopPropagation()}
                         onClick={() => setField('workLocation', location)}
                         style={{ ...chipStyle(selected, color), opacity: canEditWorkLocation ? 1 : 0.58, cursor: canEditWorkLocation ? 'pointer' : 'not-allowed' }}
                       >
@@ -644,8 +651,8 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
                     checked={!!popDay.isNightDeployment}
                     disabled={!canEditFullDay}
                     onChange={e => setField('isNightDeployment', e.target.checked)}
-                    style={{ accentColor: theme.blue, width: 14, height: 14, cursor: canEditFullDay ? 'pointer' : 'not-allowed' }} />
-                  <label htmlFor="nd" style={{ fontSize: 12, color: theme.muted, cursor: 'pointer' }}>
+                    style={{ accentColor: theme.blue, width: 18, height: 18, cursor: canEditFullDay ? 'pointer' : 'not-allowed' }} />
+                  <label htmlFor="nd" style={{ fontSize: 13, color: theme.muted, cursor: canEditFullDay ? 'pointer' : 'not-allowed', padding: '6px 0' }}>
                     🌙 Night Deployment
                   </label>
                 </div>
@@ -656,8 +663,8 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
                       checked={!!popDay.isWeekendSupport}
                       disabled={!canEditFullDay}
                       onChange={e => setField('isWeekendSupport', e.target.checked)}
-                      style={{ accentColor: theme.orange, width: 14, height: 14, cursor: canEditFullDay ? 'pointer' : 'not-allowed' }} />
-                    <label htmlFor="ws" style={{ fontSize: 12, color: theme.muted, cursor: 'pointer' }}>
+                      style={{ accentColor: theme.orange, width: 18, height: 18, cursor: canEditFullDay ? 'pointer' : 'not-allowed' }} />
+                    <label htmlFor="ws" style={{ fontSize: 13, color: theme.muted, cursor: canEditFullDay ? 'pointer' : 'not-allowed', padding: '6px 0' }}>
                       W+ Weekend Support
                     </label>
                   </div>
@@ -666,7 +673,7 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
                 <div>
                   <label style={commonStyles.label(theme)}>Notes / Path Trace</label>
                   <textarea
-                    style={{ ...commonStyles.input(theme), resize: 'vertical', minHeight: 112, fontFamily: 'inherit' }}
+                    style={{ ...commonStyles.input(theme), resize: 'vertical', minHeight: 128, fontFamily: 'inherit', position: 'relative', zIndex: 1, pointerEvents: 'auto' }}
                     value={popDay.notes || ''}
                     disabled={!canEditFullDay}
                     onChange={e => setField('notes', e.target.value)}
@@ -682,10 +689,10 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
           </div>
 
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '0 24px 24px' }}>
-            <button style={commonStyles.button(theme, 'secondary')} onClick={closePopover}>
+            <button type="button" style={commonStyles.button(theme, 'secondary')} onPointerDown={e => e.stopPropagation()} onClick={closePopover}>
               Cancel
             </button>
-            <button style={commonStyles.button(theme)} onClick={savePop}>
+            <button type="button" style={commonStyles.button(theme)} onPointerDown={e => e.stopPropagation()} onClick={savePop}>
               Save
             </button>
           </div>
@@ -783,7 +790,7 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
           </div>
 
           <CalendarGrid />
-          <DayPopover />
+          {DayPopover()}
         </div>
       )}
 
