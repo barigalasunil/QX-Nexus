@@ -4,9 +4,9 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { ThemeTokens, commonStyles } from '../theme';
-import { AppState, User, WorkingDay } from '../types';
-import { exportToCSV, exportToExcel, formatDate, generateId } from '../utils';
+import { ThemeTokens, commonStyles } from '@/theme';
+import { AppState, User, WorkingDay } from '@/types';
+import { exportToCSV, exportToExcel, formatDate, generateId } from '@/utils';
 import { BarChart3, Bug, CalendarDays, CheckCircle2, Clock, Download, FileSpreadsheet, FileText, Loader2, Rocket, Settings, XCircle } from 'lucide-react';
 
 interface ExportProps {

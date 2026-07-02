@@ -4,10 +4,10 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { ThemeTokens, commonStyles } from '../theme';
-import { AppState, Defect as IDefect, User } from '../types';
-import { generateId, formatDate, sanitise } from '../utils';
-import { Field, FilterBar, Badge, ViewOnlyBanner } from './Shared';
+import { ThemeTokens, commonStyles } from '@/theme';
+import { AppState, Defect as IDefect, User } from '@/types';
+import { generateId, formatDate, sanitise } from '@/utils';
+import { Field, FilterBar, Badge, ViewOnlyBanner } from '@/components/common/Shared';
 import { Plus, Trash2, HelpCircle, ExternalLink } from 'lucide-react';
 
 interface DefectsProps {

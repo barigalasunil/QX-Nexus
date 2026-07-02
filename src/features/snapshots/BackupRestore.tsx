@@ -4,12 +4,12 @@
  */
 
 import React, { useState, useMemo, useRef } from 'react';
-import { ThemeTokens, commonStyles } from '../theme';
-import { AppState, User, AuditLogEntry, BackupMetadata } from '../types';
-import { generateId } from '../utils';
+import { ThemeTokens, commonStyles } from '@/theme';
+import { AppState, User, AuditLogEntry, BackupMetadata } from '@/types';
+import { generateId } from '@/utils';
 import { Download, Upload, HardDrive, Clock, Archive, RefreshCw, Trash2, AlertTriangle, Check, Database } from 'lucide-react';
 
-const APP_NAME = "QA Pulse";
+const APP_NAME = "QX Nexus";
 
 interface BackupRestoreProps {
   currentUser: User;
@@ -40,7 +40,7 @@ export function BackupRestore({ currentUser, appState, setAppState, showToast, t
   const handleBackup = () => {
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
-    const filename = `qa-hub-backup-${dateStr}.json`;
+    const filename = `qx-nexus-backup-${dateStr}.json`;
     const blob = JSON.stringify(appState, null, 2);
     const size = new Blob([blob]).size;
 

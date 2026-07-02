@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Calendar, Clock } from 'lucide-react';
-import { ThemeTokens, commonStyles } from '../theme';
-import { AppState, TimesheetEntry, User, WorkingDay } from '../types';
-import { generateId } from '../utils';
-import { StatCard, ViewOnlyBanner } from './Shared';
-import { HolidayList } from './HolidayList';
+import { ThemeTokens, commonStyles } from '@/theme';
+import { AppState, TimesheetEntry, User, WorkingDay } from '@/types';
+import { generateId } from '@/utils';
+import { StatCard, ViewOnlyBanner } from '@/components/common/Shared';
+import { HolidayList } from '@/features/timesheets/HolidayList';
 
 const USER_COLORS = ['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444', '#06b6d4', '#f97316', '#84cc16'];
 const LOCATION_OPTIONS = ['QX-BLR', 'VIL-BLR', 'VIL-Pune', 'VIL-MUM'];

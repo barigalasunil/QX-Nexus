@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { ThemeTokens, commonStyles } from '../theme';
-import { AppState, User, DataEntry, Defect, Holiday, AuditLogEntry } from '../types';
-import { generateId, hashPassword, sanitise } from '../utils';
+import { ThemeTokens, commonStyles } from '@/theme';
+import { AppState, User, DataEntry, Defect, Holiday, AuditLogEntry } from '@/types';
+import { generateId, hashPassword, sanitise } from '@/utils';
 import { Upload, FileSpreadsheet, AlertTriangle, Check, X, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface BulkImportProps {
@@ -330,6 +330,8 @@ export function BulkImport({ currentUser, appState, setAppState, showToast, them
               return;
             }
 
+            const storyPointsValue = (entry as { storyPoints?: string | number | null }).storyPoints;
+
             newEntries.push({
               id: generateId(),
               date: (entry.date || ''),
@@ -338,7 +340,7 @@ export function BulkImport({ currentUser, appState, setAppState, showToast, them
               squadId: entry.squadId || '',
               jiraStoryLink: entry.jiraStoryLink || '',
               jiraStorySummary: sanitise(entry.jiraStorySummary || ''),
-              storyPoints: entry.storyPoints === '' || entry.storyPoints === undefined || entry.storyPoints === null ? null : Number(entry.storyPoints),
+              storyPoints: storyPointsValue === '' || storyPointsValue === undefined || storyPointsValue === null ? null : Number(storyPointsValue),
               tcCreated: Number(entry.tcCreated) || 0,
               tcExecuted: entry.tcExecuted ? Number(entry.tcExecuted) : null,
               tcPassed: entry.tcPassed ? Number(entry.tcPassed) : null,

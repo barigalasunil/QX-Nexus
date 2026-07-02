@@ -21,11 +21,11 @@ import {
   CalendarCheck2,
   Home as HomeIcon
 } from 'lucide-react';
-import { ThemeTokens } from '../theme';
-import { User } from '../types';
-import { getEffectivePermissions } from '../utils';
+import { ThemeTokens } from '@/theme';
+import { User } from '@/types';
+import { getEffectivePermissions } from '@/utils';
 
-const APP_NAME = "QA Pulse";
+const APP_NAME = "QX Nexus";
 
 interface SidebarProps {
   currentUser: User;

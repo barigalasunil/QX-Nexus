@@ -1,6 +1,6 @@
 {
-  "name": "QA Pulse",
-  "description": "A centralised QA metrics and team tracking repository for managing projects, squads, and releases.",
+  "name": "QX Nexus",
+  "description": "An enterprise QA operations workspace for stories, defects, releases, timesheets, attendance, and reporting.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

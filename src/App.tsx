@@ -12,28 +12,31 @@ import { getTheme, commonStyles } from './theme';
 import { AppState, AuditLogEntry, User } from './types';
 import { formatTime, generateId, getEffectivePermissions, getPermissionsForRole, hashPassword, isPasswordHash, scopeAppStateForUser } from './utils';
 
-const APP_NAME = "QA Pulse";
-import { Sidebar } from './components/Sidebar';
-import { Dashboard } from './components/Dashboard';
-import { DataEntry } from './components/DataEntry';
-import { Defects } from './components/Defects';
-import { Releases } from './components/Releases';
-import { Timesheet } from './components/Timesheet';
-import { TeamStructure } from './components/TeamStructure';
-import { Export } from './components/Export';
-import { Settings } from './components/Settings';
-import { Announcements } from './components/Announcements';
-import { LeaveRequests } from './components/LeaveRequests';
-import { BackupRestore } from './components/BackupRestore';
-import { BulkImport } from './components/BulkImport';
-import { Home } from './components/Home';
-import { Toast } from './components/Shared';
+const APP_NAME = "QX Nexus";
+import { Sidebar } from '@/components/layout/Sidebar';
+import { Dashboard } from '@/features/dashboard/Dashboard';
+import { DataEntry } from '@/features/stories/DataEntry';
+import { Defects } from '@/features/defects/Defects';
+import { Releases } from '@/features/releases/Releases';
+import { Timesheet } from '@/features/timesheets/Timesheet';
+import { TeamStructure } from '@/features/settings/TeamStructure';
+import { Export } from '@/features/reports/Export';
+import { Settings } from '@/features/settings/Settings';
+import { Announcements } from '@/features/announcements/Announcements';
+import { LeaveRequests } from '@/features/timesheets/LeaveRequests';
+import { BackupRestore } from '@/features/snapshots/BackupRestore';
+import { BulkImport } from '@/features/settings/BulkImport';
+import { Home } from '@/pages/Home';
+import { Toast } from '@/components/common/Shared';
 import { Bell, HelpCircle, UserCheck, X } from 'lucide-react';
 
-const STORE_KEY = 'qa-hub-v4:store';
-const THEME_KEY = 'qa-hub-v4:theme';
-const SESSION_TOKEN_KEY = 'qa-hub-v4:session-token';
-const SESSION_USER_KEY = 'qa-hub-v4:session-user-id';
+const STORAGE_PREFIX = 'qx-nexus';
+const LEGACY_STORAGE_PREFIX = ['qa', 'hub', 'v4'].join('-');
+const LEGACY_THEME_KEY = ['qa', 'hub', 'theme'].join('-');
+const STORE_KEY = `${STORAGE_PREFIX}:store`;
+const THEME_KEY = `${STORAGE_PREFIX}:theme`;
+const SESSION_TOKEN_KEY = `${STORAGE_PREFIX}:session-token`;
+const SESSION_USER_KEY = `${STORAGE_PREFIX}:session-user-id`;
 
 const INITIAL_APP_STATE: AppState = {
   users: [
@@ -94,7 +97,7 @@ const INITIAL_APP_STATE: AppState = {
 export default function App() {
   // Theme settings (defaults to Dark mode for modern look)
   const [isDark, setIsDark] = useState<boolean>(() => {
-    const saved = localStorage.getItem(THEME_KEY) || localStorage.getItem('qa-hub-theme');
+    const saved = localStorage.getItem(THEME_KEY) || localStorage.getItem(LEGACY_THEME_KEY);
     return saved ? saved === 'dark' : window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
   });
 
@@ -102,7 +105,7 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem(THEME_KEY, isDark ? 'dark' : 'light');
-    localStorage.removeItem('qa-hub-theme');
+    localStorage.removeItem(LEGACY_THEME_KEY);
   }, [isDark]);
 
   // Collapsible left navigation panel state
@@ -111,9 +114,9 @@ export default function App() {
   // Active view layout state
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
 
-  // Application database state synced to localStorage under "qa-hub-v4"
+  // Application database state synced to localStorage.
   const [appState, setAppState] = useState<AppState>(() => {
-    const saved = localStorage.getItem(STORE_KEY) || localStorage.getItem('qa-hub-v4');
+    const saved = localStorage.getItem(STORE_KEY) || localStorage.getItem(LEGACY_STORAGE_PREFIX);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -348,7 +351,7 @@ export default function App() {
       if (cancelled) return;
       const migratedState = { ...appState, users };
       localStorage.setItem(STORE_KEY, JSON.stringify(migratedState));
-      localStorage.removeItem('qa-hub-v4');
+      localStorage.removeItem(LEGACY_STORAGE_PREFIX);
       setAppState(migratedState);
       setMigrationReady(true);
     };
@@ -407,10 +410,10 @@ export default function App() {
 
   useEffect(() => {
     const showRuntimeError = (message: string) => {
-      const existing = document.getElementById('qa-hub-runtime-error');
+      const existing = document.getElementById('qx-nexus-runtime-error');
       if (existing) existing.remove();
       const panel = document.createElement('div');
-      panel.id = 'qa-hub-runtime-error';
+      panel.id = 'qx-nexus-runtime-error';
       panel.style.cssText = [
         'position:fixed',
         'inset:16px',
@@ -486,9 +489,9 @@ export default function App() {
   }, [toast]);
 
   useEffect(() => {
-    if (document.getElementById('qa-hub-animations')) return;
+    if (document.getElementById('qx-nexus-animations')) return;
     const style = document.createElement('style');
-    style.id = 'qa-hub-animations';
+    style.id = 'qx-nexus-animations';
     style.textContent = `
       @keyframes pageEnter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
       @keyframes rowFlash { 0% { background-color: rgba(245,158,11,0.3); } 100% { background-color: transparent; } }

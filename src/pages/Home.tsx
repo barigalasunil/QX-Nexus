@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { ThemeTokens, commonStyles } from '../theme';
-import { AppState, User, Recognition } from '../types';
-import { getGreeting, getRelativeTime, getCurrentWeekRange, getNext14DaysRange, generateId } from '../utils';
+import { ThemeTokens, commonStyles } from '@/theme';
+import { AppState, User, Recognition } from '@/types';
+import { getGreeting, getRelativeTime, getCurrentWeekRange, getNext14DaysRange, generateId } from '@/utils';
 import { Plus, X, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface HomeProps {

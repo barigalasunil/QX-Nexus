@@ -4,10 +4,10 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ThemeTokens, commonStyles } from '../theme';
-import { AppState, ReleaseEntry, Sprint, User } from '../types';
-import { formatDate, formatDateTime, generateId, sanitise } from '../utils';
-import { Field, ViewOnlyBanner } from './Shared';
+import { ThemeTokens, commonStyles } from '@/theme';
+import { AppState, ReleaseEntry, Sprint, User } from '@/types';
+import { formatDate, formatDateTime, generateId, sanitise } from '@/utils';
+import { Field, ViewOnlyBanner } from '@/components/common/Shared';
 import { Edit3, HelpCircle, Trash2 } from 'lucide-react';
 
 interface CyclesProps {

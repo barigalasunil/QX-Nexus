@@ -5,10 +5,10 @@
 
 import React, { useState, useMemo } from 'react';
 import { Megaphone, Plus, Trash2, Clock, Users, Globe, Filter, X, Check, AlertTriangle, Info, AlertCircle } from 'lucide-react';
-import { ThemeTokens, commonStyles } from '../theme';
-import { AppState, User, Announcement, AuditLogEntry } from '../types';
-import { generateId, sanitise } from '../utils';
-import { Badge } from './Shared';
+import { ThemeTokens, commonStyles } from '@/theme';
+import { AppState, User, Announcement, AuditLogEntry } from '@/types';
+import { generateId, sanitise } from '@/utils';
+import { Badge } from '@/components/common/Shared';
 
 interface AnnouncementsProps {
   currentUser: User;

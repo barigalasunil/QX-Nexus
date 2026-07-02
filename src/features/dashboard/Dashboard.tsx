@@ -4,9 +4,9 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ThemeTokens, commonStyles } from '../theme';
-import { AppState, User } from '../types';
-import { StatCard, FilterBar } from './Shared';
+import { ThemeTokens, commonStyles } from '@/theme';
+import { AppState, User } from '@/types';
+import { StatCard, FilterBar } from '@/components/common/Shared';
 import { Megaphone, FileText } from 'lucide-react';
 
 interface DashboardProps {

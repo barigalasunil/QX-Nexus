@@ -5,8 +5,8 @@
 
 import React, { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Search } from 'lucide-react';
-import { ThemeTokens, commonStyles } from '../theme';
-import { AppState, User } from '../types';
+import { ThemeTokens, commonStyles } from '@/theme';
+import { AppState, User } from '@/types';
 
 interface TeamStructureProps {
   currentUser: User;
