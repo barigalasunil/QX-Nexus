@@ -94,18 +94,23 @@ export const scopeAppStateForUser = (state: AppState, user: User): AppState => {
 
   const projectId = user.projectId;
   const squadId = user.squadId;
+  const accessibleSquadIds = new Set(
+    state.squads
+      .filter(squad => (user.accessibleSquads || []).includes(squad.name) || (user.accessibleSquads || []).includes(squad.id) || squad.id === squadId)
+      .map(squad => squad.id)
+  );
   const projectUsers = state.users.filter((u) => {
     if (u.id === user.id) return true;
     if (u.projectId !== projectId) return false;
     if (user.role === 'admin' || user.role === 'guest') return true;
-    return u.squadId === squadId;
+    return !!u.squadId && accessibleSquadIds.has(u.squadId);
   });
   const visibleUserIds = new Set(projectUsers.map((u) => u.id));
 
   const inScope = (record: { projectId: string; squadId?: string }) => {
     if (record.projectId !== projectId) return false;
-    if ((user.role === 'lead' || user.role === 'member') && squadId) {
-      return record.squadId === squadId;
+    if (user.role === 'lead' || user.role === 'member') {
+      return !!record.squadId && accessibleSquadIds.has(record.squadId);
     }
     return true;
   };
@@ -115,7 +120,7 @@ export const scopeAppStateForUser = (state: AppState, user: User): AppState => {
     users: projectUsers,
     projects: state.projects.filter((p) => p.id === projectId),
     squads: state.squads.filter((s) => s.projectId === projectId && (
-      user.role === 'admin' || !squadId || s.id === squadId
+      user.role === 'admin' || accessibleSquadIds.has(s.id)
     )),
     dataEntries: state.dataEntries.filter(inScope),
     defects: state.defects.filter(inScope),

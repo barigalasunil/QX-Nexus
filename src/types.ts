@@ -20,6 +20,7 @@ export interface User {
   password?: string;
   role: 'superadmin' | 'admin' | 'lead' | 'member' | 'guest';
   squadId: string | null;
+  accessibleSquads?: string[];
   projectId: string | null;
   email: string;
   permissions?: UserPermissions;

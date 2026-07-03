@@ -110,6 +110,55 @@ export function Defects({ currentUser, appState, setAppState, showToast, theme, 
       .map(s => ({ value: s.id, label: s.name }));
   }, [appState.squads, form.projectId]);
 
+  const userAccessibleSquads = useMemo(() => {
+    if (currentUser.role !== 'lead' && currentUser.role !== 'member') return [];
+    const names = currentUser.accessibleSquads || [];
+    if (names.length > 0) {
+      return appState.squads
+        .filter(squad => names.includes(squad.name) || names.includes(squad.id))
+        .map(squad => ({ value: squad.id, label: squad.name, projectId: squad.projectId || '' }));
+    }
+    return appState.squads
+      .filter(squad => squad.id === currentUser.squadId)
+      .map(squad => ({ value: squad.id, label: squad.name, projectId: squad.projectId || '' }));
+  }, [appState.squads, currentUser.accessibleSquads, currentUser.role, currentUser.squadId]);
+
+  const isSquadRestrictedUser = userAccessibleSquads.length > 0;
+  const showSquadSelector = isSquadRestrictedUser && userAccessibleSquads.length > 1;
+  const activeSquadId = isSquadRestrictedUser ? (form.squadId || userAccessibleSquads[0]?.value || '') : form.squadId;
+
+  React.useEffect(() => {
+    if (!isSquadRestrictedUser || userAccessibleSquads.length !== 1) return;
+    const squad = userAccessibleSquads[0];
+    setForm(previous => previous.squadId === squad.value
+      ? previous
+      : { ...previous, projectId: squad.projectId || previous.projectId, squadId: squad.value, release: '', sprintId: '', sprintName: '' });
+  }, [isSquadRestrictedUser, userAccessibleSquads]);
+
+  const releaseOptions = useMemo(() => {
+    const releaseNames = new Set<string>();
+    appState.releaseEntries
+      .filter(entry => !activeSquadId || entry.squadId === activeSquadId)
+      .forEach(entry => releaseNames.add(entry.releaseName));
+    if (releaseNames.size === 0 && (!isSquadRestrictedUser || activeSquadId)) {
+      (appState.releaseNames || []).forEach(release => releaseNames.add(release.name));
+    }
+    return Array.from(releaseNames).sort().map(name => ({ value: name, label: name }));
+  }, [activeSquadId, appState.releaseEntries, appState.releaseNames, isSquadRestrictedUser]);
+
+  const sprintOptions = useMemo(() => {
+    return (appState.sprints || [])
+      .filter(sprint => {
+        const squadId = (sprint as { squadId?: string }).squadId;
+        return !squadId || !activeSquadId || squadId === activeSquadId;
+      })
+      .sort((a, b) => b.startDate.localeCompare(a.startDate))
+      .map(s => {
+        const label = `${s.name} (${new Date(s.startDate+'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – ${new Date(s.endDate+'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})})`;
+        return { value: s.id, label };
+      });
+  }, [activeSquadId, appState.sprints]);
+
   // Lookup maps
   const projectMap = useMemo(() => new Map(appState.projects.map(p => [p.id, p.name])), [appState.projects]);
   const squadMap = useMemo(() => new Map(appState.squads.map(s => [s.id, s.name])), [appState.squads]);
@@ -134,13 +183,15 @@ export function Defects({ currentUser, appState, setAppState, showToast, theme, 
     if (Object.keys(nextErrors).length) return;
 
     const sprintObj = (appState.sprints || []).find(s => s.id === form.sprintId);
+    const saveSquadId = activeSquadId;
+    const saveProjectId = form.projectId || appState.squads.find(squad => squad.id === saveSquadId)?.projectId || '';
     const newDefect: IDefect = {
       id: generateId(),
       date: form.date,
       jiraCreatedDate: form.jiraCreatedDate,
       release: sanitise(form.release.trim()),
-      projectId: form.projectId,
-      squadId: form.squadId,
+      projectId: saveProjectId,
+      squadId: saveSquadId,
       jiraDefectLink: form.jiraDefectLink.trim(),
       jiraDefectSummary: sanitise(form.jiraDefectSummary.trim()),
       priority: form.priority,
@@ -197,7 +248,7 @@ export function Defects({ currentUser, appState, setAppState, showToast, theme, 
       jiraCreatedDate: new Date().toISOString().split('T')[0],
       release: '',
       projectId: currentUser.projectId || '',
-      squadId: currentUser.squadId || '',
+      squadId: isSquadRestrictedUser && userAccessibleSquads.length === 1 ? userAccessibleSquads[0].value : currentUser.squadId || '',
       jiraDefectLink: '',
       jiraDefectSummary: '',
       priority: 'P2',
@@ -304,9 +355,9 @@ export function Defects({ currentUser, appState, setAppState, showToast, theme, 
               type="select"
               value={form.release}
               onChange={(v) => updateForm('release', v)}
-              options={(appState.releaseNames || []).map((r) => ({ value: r.name, label: r.name }))}
-              placeholder={(!appState.releaseNames || appState.releaseNames.length === 0) ? "No releases — add in Settings first" : "— Select Release —"}
-              disabled={!appState.releaseNames || appState.releaseNames.length === 0}
+              options={releaseOptions}
+              placeholder={releaseOptions.length === 0 ? (showSquadSelector && !form.squadId ? 'Select squad first' : 'No releases available') : "— Select Release —"}
+              disabled={releaseOptions.length === 0}
               required
               error={errors.release}
               theme={theme}
@@ -322,10 +373,7 @@ export function Defects({ currentUser, appState, setAppState, showToast, theme, 
               type="select"
               value={form.sprintId || ''}
               onChange={(v) => updateForm('sprintId', v, { sprintName: v ? (appState.sprints || []).find(s => s.id === v)?.name || '' : '' })}
-              options={(appState.sprints || []).sort((a, b) => b.startDate.localeCompare(a.startDate)).map(s => {
-                const label = `${s.name} (${new Date(s.startDate+'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – ${new Date(s.endDate+'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})})`;
-                return { value: s.id, label };
-              })}
+              options={sprintOptions}
               placeholder="— No Sprint —"
               theme={theme}
             />
@@ -334,7 +382,7 @@ export function Defects({ currentUser, appState, setAppState, showToast, theme, 
               label="Project"
               type="select"
               value={form.projectId}
-              onChange={(v) => updateForm('projectId', v, { squadId: '' })}
+              onChange={(v) => updateForm('projectId', v, { squadId: '', release: '', sprintId: '', sprintName: '' })}
               options={projectOptions}
               placeholder="Select Project"
               required
@@ -342,17 +390,24 @@ export function Defects({ currentUser, appState, setAppState, showToast, theme, 
               theme={theme}
             />
 
-            <Field
-              label="Squad"
-              type="select"
-              value={form.squadId}
-              onChange={(v) => updateForm('squadId', v)}
-              options={squadOptions}
-              placeholder="Select Squad"
-              required
-              error={errors.squadId}
-              theme={theme}
-            />
+            {(!isSquadRestrictedUser || showSquadSelector) && (
+              <Field
+                label="Squad"
+                type="select"
+                value={form.squadId}
+                onChange={(v) => updateForm('squadId', v, {
+                  projectId: appState.squads.find(squad => squad.id === v)?.projectId || form.projectId,
+                  release: '',
+                  sprintId: '',
+                  sprintName: '',
+                })}
+                options={isSquadRestrictedUser ? userAccessibleSquads : squadOptions}
+                placeholder="Select Squad"
+                required
+                error={errors.squadId}
+                theme={theme}
+              />
+            )}
 
             <Field label="Jira Defect Link" type="text" placeholder="https://jira.company.com/browse/BUG-456" value={form.jiraDefectLink} onChange={(v) => updateForm('jiraDefectLink', v)} error={errors.jiraDefectLink} required theme={theme} />
             <Field label="Jira Defect Summary / Title" type="text" placeholder="e.g. Payment failed on checkout with stripe" value={form.jiraDefectSummary} onChange={(v) => updateForm('jiraDefectSummary', v)} error={errors.jiraDefectSummary} required theme={theme} />

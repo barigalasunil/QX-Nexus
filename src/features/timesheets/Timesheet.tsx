@@ -8,8 +8,9 @@ import { StatCard, ViewOnlyBanner } from '@/components/common/Shared';
 import { HolidayList } from '@/features/timesheets/HolidayList';
 
 const USER_COLORS = ['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444', '#06b6d4', '#f97316', '#84cc16'];
-const LOCATION_OPTIONS = ['QX-BLR', 'VIL-BLR', 'VIL-Pune', 'VIL-MUM'];
+const LOCATION_OPTIONS = ['WFH', 'VIL-Pune', 'VIL-BLR', 'VIL-MUM', 'QX-BLR'];
 const LOCATION_COLORS: Record<string, string> = {
+  'WFH': '#10b981',
   'QX-BLR': '#3b82f6',
   'VIL-BLR': '#6366f1',
   'VIL-Pune': '#f59e0b',
@@ -208,7 +209,7 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
     setPopDay(prev => {
       if (!prev) return prev;
       const next = { ...prev, [field]: value, isStatusSet: field === 'status' ? true : prev.isStatusSet };
-      if (field === 'status' && value !== 'Working') next.workLocation = null;
+      if (field === 'status' && value !== 'Working' && value !== 'WFH') next.workLocation = null;
       popDayRef.current = next;
       return next;
     });
@@ -238,7 +239,7 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
       isAdminAdjustment: targetId !== currentUser.id,
     };
     saveDay(final);
-    if (final.status === 'Working' && !final.workLocation) {
+    if ((final.status === 'Working' || final.status === 'WFH') && !final.workLocation) {
       showToast('⚠ Saved — please set office location.', 'warning');
     }
     setPopOpen(false);
@@ -484,7 +485,7 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
       { value: 'Holiday', label: 'Holiday', icon: '📅', color: theme.indigo },
       { value: 'Training', label: 'Training', icon: '🎓', color: theme.amber },
     ];
-    const showLocation = popDay.status === 'Working';
+    const showLocation = popDay.status === 'Working' || popDay.status === 'WFH';
     const canEditFullDay = targetId === currentUser.id || currentUser.role === 'superadmin' || currentUser.role === 'admin';
     const canEditWorkLocation = targetId === currentUser.id || canEditOtherWorkLocation;
     const columnStyle = {
@@ -584,48 +585,33 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
           }}>
             <section style={columnStyle}>
               <label style={{ ...commonStyles.label(theme), marginBottom: 12 }}>Status</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-                {statusOptions.map(option => {
-                  const selected = popDay.status === option.value;
-                  return (
-                    <button
-                      key={option.label}
-                      type="button"
-                      disabled={!canEditFullDay}
-                      onPointerDown={e => e.stopPropagation()}
-                      onClick={() => setField('status', option.value)}
-                      style={{ ...chipStyle(selected, option.color), opacity: canEditFullDay ? 1 : 0.58, cursor: canEditFullDay ? 'pointer' : 'not-allowed' }}
-                    >
-                      <span style={{ color: selected ? '#ffffff' : option.color }}>{option.icon}</span>
-                      <span>{option.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+              <select
+                value={popDay.status || ''}
+                disabled={!canEditFullDay}
+                onChange={event => setField('status', event.target.value || null)}
+                style={{ ...commonStyles.select(theme, true), opacity: canEditFullDay ? 1 : 0.58, cursor: canEditFullDay ? 'pointer' : 'not-allowed' }}
+              >
+                <option value="">Select status</option>
+                {statusOptions.map(option => (
+                  <option key={option.label} value={option.value || ''}>{option.label}</option>
+                ))}
+              </select>
             </section>
 
             {showLocation && (
               <section style={columnStyle}>
                 <label style={{ ...commonStyles.label(theme), marginBottom: 12 }}>Work Location</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-                  {LOCATION_OPTIONS.map(location => {
-                    const selected = popDay.workLocation === location;
-                    const color = LOCATION_COLORS[location] || theme.blue;
-                    return (
-                      <button
-                        key={location}
-                        type="button"
-                        disabled={!canEditWorkLocation}
-                        onPointerDown={e => e.stopPropagation()}
-                        onClick={() => setField('workLocation', location)}
-                        style={{ ...chipStyle(selected, color), opacity: canEditWorkLocation ? 1 : 0.58, cursor: canEditWorkLocation ? 'pointer' : 'not-allowed' }}
-                      >
-                        <span style={{ color: selected ? '#ffffff' : color }}>🏢</span>
-                        <span>{location}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <select
+                  value={popDay.workLocation || ''}
+                  disabled={!canEditWorkLocation}
+                  onChange={event => setField('workLocation', event.target.value || null)}
+                  style={{ ...commonStyles.select(theme, true), opacity: canEditWorkLocation ? 1 : 0.58, cursor: canEditWorkLocation ? 'pointer' : 'not-allowed' }}
+                >
+                  <option value="">Select location</option>
+                  {LOCATION_OPTIONS.map(location => (
+                    <option key={location} value={location}>{location}</option>
+                  ))}
+                </select>
                 {!popDay.workLocation && (
                   <div style={{ fontSize: 11, color: theme.amber, marginTop: 10 }}>
                     ⚠ Please set your office location

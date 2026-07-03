@@ -49,6 +49,7 @@ const INITIAL_APP_STATE: AppState = {
       password: 'e34f92a20532a873cb3184398070b4b82a8fa29cf48572c203dc5f0fa6158231',
       role: 'superadmin',
       squadId: null,
+      accessibleSquads: [],
       projectId: null,
       permissions: {
         dashboard: 'edit',
@@ -161,6 +162,9 @@ export default function App() {
             email: u.email ?? '',
             projectId: role === 'superadmin' ? null : (u.projectId ?? null),
             squadId: role === 'superadmin' || role === 'admin' ? null : (u.squadId ?? null),
+            accessibleSquads: Array.isArray(u.accessibleSquads)
+              ? u.accessibleSquads
+              : (u.squadId ? [parsed.squads?.find((s: any) => s.id === u.squadId)?.name || u.squadId] : []),
             permissions: role === 'superadmin'
               ? getPermissionsForRole('superadmin')
               : (u.permissions || getPermissionsForRole(role)),

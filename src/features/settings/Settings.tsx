@@ -60,6 +60,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     email: '',
     role: 'member' as User['role'],
     squadId: '',
+    accessibleSquads: [] as string[],
     projectId: '',
     reportsTo: '',
     jobTitle: '',
@@ -134,6 +135,25 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       .map(s => ({ value: s.id, label: s.name }));
   }, [appState.squads, currentUser.projectId, isAdmin, userForm.projectId]);
 
+  const toggleAccessibleSquad = (squadName: string) => {
+    setUserForm(previous => {
+      const exists = previous.accessibleSquads.includes(squadName);
+      const accessibleSquads = exists
+        ? previous.accessibleSquads.filter(name => name !== squadName)
+        : [...previous.accessibleSquads, squadName];
+      return {
+        ...previous,
+        accessibleSquads,
+        squadId: appState.squads.find(squad => squad.name === accessibleSquads[0])?.id || '',
+      };
+    });
+    setUserErrors(previous => {
+      const next = { ...previous };
+      delete next.squadId;
+      return next;
+    });
+  };
+
   const reportsToOptions = useMemo(() => {
     return getReportingManagerOptions(userForm.role, isAdmin ? currentUser.projectId : userForm.projectId);
   }, [appState.users, currentUser.projectId, isAdmin, userForm.projectId, userForm.role]);
@@ -199,7 +219,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     if ((userForm.role === 'admin' || userForm.role === 'lead' || userForm.role === 'member') && !(isAdmin ? currentUser.projectId : userForm.projectId)) {
       nextErrors.projectId = userForm.role === 'admin' ? 'Project is required for Admin' : 'Project is required.';
     }
-    if ((userForm.role === 'lead' || userForm.role === 'member') && !userForm.squadId) nextErrors.squadId = 'Squad is required.';
+    if ((userForm.role === 'lead' || userForm.role === 'member') && userForm.accessibleSquads.length === 0) nextErrors.squadId = 'Select at least one squad.';
     if ((userForm.role === 'lead' || userForm.role === 'member') && !userForm.reportsTo) {
       nextErrors.reportsTo = 'Reporting Manager is required.';
     } else if ((userForm.role === 'lead' || userForm.role === 'member') && !reportsToOptions.some(option => option.value === userForm.reportsTo)) {
@@ -212,7 +232,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       ? null
       : (isAdmin ? currentUser.projectId : userForm.projectId);
     const squadId = userForm.role === 'lead' || userForm.role === 'member'
-      ? userForm.squadId
+      ? (appState.squads.find(squad => squad.name === userForm.accessibleSquads[0])?.id || userForm.squadId)
       : null;
 
     // STEP 1 — Generate plain text password FIRST
@@ -229,6 +249,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       password: hashedPassword,
       role: userForm.role,
       squadId,
+      accessibleSquads: userForm.role === 'lead' || userForm.role === 'member' ? userForm.accessibleSquads : [],
       projectId,
       permissions: userForm.role === 'superadmin' ? getPermissionsForRole('superadmin') : (userForm.role === 'guest' ? getPermissionsForRole('guest') : userPermissions),
       createdBy: currentUser.id,
@@ -281,6 +302,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       email: '',
       role: 'member',
       squadId: '',
+      accessibleSquads: [],
       projectId: isAdmin ? (currentUser.projectId || '') : '',
       reportsTo: '',
       jobTitle: '',
@@ -881,7 +903,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                 type="select"
                 value={userForm.role}
                 onChange={(v) => {
-                  updateUserForm('role', v, { squadId: '', projectId: isAdmin ? (currentUser.projectId || '') : '', reportsTo: '' });
+                  updateUserForm('role', v, { squadId: '', accessibleSquads: [], projectId: isAdmin ? (currentUser.projectId || '') : '', reportsTo: '' });
                   setUserPermissions(getPermissionsForRole(v as any));
                 }}
                 options={allowedRoles.map(role => ({
@@ -897,7 +919,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                 label="Assigned Project"
                 type="select"
                 value={userForm.projectId}
-                onChange={(v) => updateUserForm('projectId', v, { squadId: '', reportsTo: '' })}
+                onChange={(v) => updateUserForm('projectId', v, { squadId: '', accessibleSquads: [], reportsTo: '' })}
                 options={projectOptions}
                 placeholder="Select project"
                 required
@@ -906,17 +928,27 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                 theme={theme}
               />}
 
-              {(userForm.role === 'lead' || userForm.role === 'member') && <Field
-                label="Assigned Squad"
-                type="select"
-                value={userForm.squadId}
-                onChange={(v) => updateUserForm('squadId', v)}
-                options={squadOptions}
-                placeholder="Select squad"
-                required
-                error={userErrors.squadId}
-                theme={theme}
-              />}
+              {(userForm.role === 'lead' || userForm.role === 'member') && (
+                <div>
+                  <label style={commonStyles.label(theme)}>Accessible Squads *</label>
+                  <div style={{ display: 'grid', gap: '8px', maxHeight: '180px', overflowY: 'auto', padding: '8px', border: `1px solid ${userErrors.squadId ? theme.red : theme.border}`, borderRadius: '6px', backgroundColor: theme.inputBg }}>
+                    {squadOptions.length === 0 ? (
+                      <span style={{ fontSize: '12px', color: theme.muted }}>No squads available for this project.</span>
+                    ) : squadOptions.map(option => (
+                      <label key={option.value} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: theme.text, cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={userForm.accessibleSquads.includes(option.label)}
+                          onChange={() => toggleAccessibleSquad(option.label)}
+                          style={{ accentColor: theme.blue }}
+                        />
+                        <span>{option.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {userErrors.squadId && <span style={{ color: theme.red, fontSize: '11px', marginTop: '3px', display: 'block' }}>{userErrors.squadId}</span>}
+                </div>
+              )}
 
               {(userForm.role === 'member' || userForm.role === 'lead') && <Field
                 label="Reports To (Direct Manager)"
@@ -1008,7 +1040,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                   <tr style={{ backgroundColor: theme.inputBg }}>
                     <th style={commonStyles.th(theme)}>Username</th>
                     <th style={commonStyles.th(theme)}>Role</th>
-                    <th style={commonStyles.th(theme)}>Squad Assigned</th>
+                    <th style={commonStyles.th(theme)}>Accessible Squads</th>
                     <th style={commonStyles.th(theme)}>Reporting Manager</th>
                     {isSuperAdmin && <th style={commonStyles.th(theme)}>Project</th>}
                     <th style={commonStyles.th(theme)}>Base Office</th>
@@ -1039,7 +1071,11 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                               </span>
                             )}
                           </td>
-                          <td style={commonStyles.td(theme)}>{squadMap.get(u.squadId || '') || '—'}</td>
+                          <td style={commonStyles.td(theme)}>
+                            {(u.accessibleSquads && u.accessibleSquads.length > 0)
+                              ? u.accessibleSquads.join(', ')
+                              : (squadMap.get(u.squadId || '') || '—')}
+                          </td>
                           <td style={commonStyles.td(theme)}>
                             {(u.role === 'lead' || u.role === 'member') && canEditSettings ? (
                               <select
