@@ -28,6 +28,8 @@ import { BackupRestore } from '@/features/snapshots/BackupRestore';
 import { BulkImport } from '@/features/settings/BulkImport';
 import { Home } from '@/pages/Home';
 import { Toast } from '@/components/common/Shared';
+import { NotificationCenter } from '@/components/notifications/NotificationCenter';
+import { NotificationService } from '@/services/NotificationService';
 import { Bell, HelpCircle, UserCheck, X } from 'lucide-react';
 
 const STORAGE_PREFIX = 'qx-nexus';
@@ -178,11 +180,16 @@ export default function App() {
             baseOffice: u.baseOffice === 'Mumbai' ? 'Mumbai' : 'Bengaluru',
             notifications: (u.notifications || []).map((notification: any) => ({
               id: notification.id || crypto.randomUUID?.() || Math.random().toString(36).slice(2),
+              title: notification.title,
               message: notification.message || 'Notification',
               type: ['info', 'warning', 'success', 'alert'].includes(notification.type) ? notification.type : 'info',
+              category: notification.category || 'system',
+              priority: notification.priority || 'normal',
               read: notification.read ?? false,
               createdAt: notification.createdAt || new Date().toISOString(),
               link: notification.link,
+              actionLabel: notification.actionLabel,
+              dedupeKey: notification.dedupeKey,
             })),
           };
         });
@@ -340,6 +347,7 @@ export default function App() {
     return INITIAL_APP_STATE;
   });
 
+  const previousNotificationStateRef = React.useRef<AppState | null>(null);
   const [migrationReady, setMigrationReady] = useState(false);
   useEffect(() => {
     let cancelled = false;
@@ -362,6 +370,18 @@ export default function App() {
   useEffect(() => {
     if (migrationReady) {
       localStorage.setItem(STORE_KEY, JSON.stringify(appState));
+    }
+  }, [appState, migrationReady]);
+
+  useEffect(() => {
+    if (!migrationReady) return;
+    const previous = previousNotificationStateRef.current;
+    previousNotificationStateRef.current = appState;
+    if (!previous) return;
+    const withNotifications = NotificationService.applyDetectedNotifications(previous, appState);
+    if (withNotifications !== appState) {
+      previousNotificationStateRef.current = withNotifications;
+      setAppState(withNotifications);
     }
   }, [appState, migrationReady]);
 
@@ -768,24 +788,7 @@ export default function App() {
 
   useEffect(() => {
     if (!currentUser) return;
-    const daysToExpiry = currentUser.passwordChangedAt ? 30 - Math.floor((Date.now() - new Date(currentUser.passwordChangedAt).getTime()) / 86400000) : 0;
-    if (daysToExpiry !== 3) return;
-    setAppState(previous => (previous.users.find(user => user.id === currentUser.id)?.notifications || []).some(n => n.message.includes('password expires in 3 days'))
-      ? previous
-      : {
-        ...previous,
-        users: previous.users.map(user => user.id === currentUser.id ? {
-          ...user,
-          notifications: [{
-            id: crypto.randomUUID?.() || Math.random().toString(36).slice(2),
-            message: 'Your password expires in 3 days. Please update it.',
-            read: false,
-            createdAt: new Date().toISOString(),
-            type: 'warning' as const,
-            link: 'profile',
-          }, ...(user.notifications || [])].slice(0, 50),
-        } : user),
-      });
+    setAppState(previous => NotificationService.passwordExpiryReminder(previous, currentUser));
   }, [currentUser?.id, currentUser?.passwordChangedAt]);
 
   useEffect(() => {
@@ -938,49 +941,22 @@ export default function App() {
 
   const activeTabValidated = canAccessTab(currentTab) ? currentTab : getFirstAccessibleTab(currentUser);
   const userPerms = getEffectivePermissions(currentUser);
-  const legacyNotifications = (appState.notifications || []).filter(item => item.userId === currentUser.id);
-  const allUserNotifications = [
-    ...(Array.isArray(currentUser.notifications) ? currentUser.notifications : []),
-    ...legacyNotifications.map(item => ({
-      id: item.id,
-      message: item.message,
-      type: item.type === 'defect' ? 'alert' as const : item.type === 'password' ? 'warning' as const : 'info' as const,
-      read: item.read,
-      createdAt: item.createdAt,
-      link: undefined,
-    })),
-  ]
-    .map(notification => ({
-      ...notification,
-      id: notification.id || crypto.randomUUID?.() || Math.random().toString(36).slice(2),
-      message: notification.message || 'Notification',
-      read: notification.read ?? false,
-      createdAt: notification.createdAt || new Date().toISOString(),
-    }))
-    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
-    .slice(0, 50);
+  const liveCurrentUser = appState.users.find(user => user.id === currentUser.id) || currentUser;
+  const allUserNotifications = NotificationService.getForUser(appState, liveCurrentUser.id);
   const unreadNotifications = allUserNotifications.filter(item => !item.read);
 
   const markNotificationsRead = () => {
-    setAppState(previous => ({
-      ...previous,
-      users: previous.users.map(user => user.id === currentUser.id
-        ? { ...user, notifications: (user.notifications || []).map(notification => ({ ...notification, read: true })) }
-        : user),
-      notifications: (previous.notifications || []).map(notification => notification.userId === currentUser.id ? { ...notification, read: true } : notification),
-    }));
+    setAppState(previous => NotificationService.markAllRead(previous, liveCurrentUser.id));
   };
 
   const markNotificationRead = (id: string, link?: string) => {
-    setAppState(previous => ({
-      ...previous,
-      users: previous.users.map(user => user.id === currentUser.id
-        ? { ...user, notifications: (user.notifications || []).map(notification => notification.id === id ? { ...notification, read: true } : notification) }
-        : user),
-      notifications: (previous.notifications || []).map(notification => notification.id === id ? { ...notification, read: true } : notification),
-    }));
+    setAppState(previous => NotificationService.markRead(previous, liveCurrentUser.id, id));
     if (link) setCurrentTab(link);
     setNotificationsOpen(false);
+  };
+
+  const deleteNotification = (id: string) => {
+    setAppState(previous => NotificationService.delete(previous, liveCurrentUser.id, id));
   };
 
   const saveProfileName = () => {
@@ -1265,18 +1241,15 @@ export default function App() {
               {unreadNotifications.length > 0 && <span style={{ position: 'absolute', top: '-5px', right: '-5px', minWidth: '16px', height: '16px', borderRadius: '999px', backgroundColor: theme.red, color: '#fff', fontSize: '10px', display: 'grid', placeItems: 'center', padding: '0 4px' }}>{unreadNotifications.length}</span>}
             </button>}
             {currentUser.role !== 'guest' && notificationsOpen && (
-              <div style={{ position: 'absolute', right: 0, top: '34px', width: '320px', maxHeight: '420px', overflowY: 'auto', backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: '8px', boxShadow: '0 18px 42px rgba(0,0,0,0.22)', zIndex: 80 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', borderBottom: `1px solid ${theme.border}` }}>
-                  <strong style={{ color: theme.text }}>Notifications</strong>
-                  <button type="button" onClick={markNotificationsRead} style={{ border: 0, background: 'transparent', color: theme.blue, fontSize: '11px', cursor: 'pointer' }}>Mark all as read</button>
-                </div>
-                {allUserNotifications.length ? allUserNotifications.map(notification => (
-                  <button key={notification.id} type="button" onClick={() => markNotificationRead(notification.id, notification.link)} style={{ width: '100%', textAlign: 'left', border: 0, background: notification.read ? theme.inputBg : theme.surface, padding: '10px', borderLeft: `3px solid ${notification.read ? 'transparent' : theme.blue}`, borderBottom: `1px solid ${theme.border}`, color: notification.read ? theme.muted : theme.text, cursor: 'pointer' }}>
-                    <div style={{ fontSize: '12px', fontWeight: notification.read ? 500 : 800 }}>{notification.message}</div>
-                    <div style={{ fontSize: '10px', marginTop: '4px' }}>{new Date(notification.createdAt).toLocaleString()}</div>
-                  </button>
-                )) : <div style={{ padding: '18px', color: theme.muted, fontSize: '12px' }}>No notifications.</div>}
-              </div>
+              <NotificationCenter
+                notifications={allUserNotifications}
+                theme={theme}
+                onClose={() => setNotificationsOpen(false)}
+                onMarkRead={(id) => markNotificationRead(id)}
+                onMarkAllRead={markNotificationsRead}
+                onDelete={deleteNotification}
+                onOpenLink={(notification) => markNotificationRead(notification.id, notification.link)}
+              />
             )}
           </div>
         </header>

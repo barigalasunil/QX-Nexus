@@ -202,11 +202,16 @@ export interface AuditLogEntry {
 
 export interface UserNotification {
   id: string;
+  title?: string;
   message: string;
   type: 'info' | 'warning' | 'success' | 'alert';
+  category?: 'release' | 'sprint' | 'defect' | 'announcement' | 'system' | 'user' | 'password' | 'timesheet';
+  priority?: 'low' | 'normal' | 'high' | 'critical';
   read: boolean;
   createdAt: string;
   link?: string;
+  actionLabel?: string;
+  dedupeKey?: string;
 }
 
 export interface NotificationEntry {
