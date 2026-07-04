@@ -241,14 +241,7 @@ interface FilterBarProps {
     sprintId?: string;
     memberId?: string;
   };
-  setFilters: React.Dispatch<React.SetStateAction<{
-    projectId: string;
-    squadId: string;
-    release: string;
-    month: string;
-    sprintId?: string;
-    memberId?: string;
-  }>>;
+  setFilters: React.Dispatch<React.SetStateAction<any>>;
   theme: ThemeTokens;
   showProject?: boolean;
   lockedProjectId?: string;
@@ -279,7 +272,7 @@ export function FilterBar({ projects, squads, dataEntries, defects, releaseNames
   const hasActiveFilters = filters.projectId || filters.squadId || filters.release || filters.sprintId || filters.month || filters.memberId;
 
   const handleClear = () => {
-    setFilters(previous => ({ ...previous, projectId: lockedProjectId || '', squadId: '', release: '', sprintId: '', month: '', memberId: '' }));
+    setFilters((previous: any) => ({ ...previous, projectId: lockedProjectId || '', squadId: '', release: '', sprintId: '', month: '', memberId: '' }));
   };
 
   return (
@@ -304,7 +297,7 @@ export function FilterBar({ projects, squads, dataEntries, defects, releaseNames
         <label style={{ ...commonStyles.label(theme), fontSize: '10px', marginBottom: '2px' }}>Project</label>
         <select
           value={filters.projectId}
-          onChange={(e) => setFilters(prev => ({ ...prev, projectId: e.target.value, squadId: '', memberId: '' }))}
+          onChange={(e) => setFilters((prev: any) => ({ ...prev, projectId: e.target.value, squadId: '', memberId: '' }))}
           style={commonStyles.select(theme)}
         >
           <option value="">All Projects</option>
@@ -319,7 +312,7 @@ export function FilterBar({ projects, squads, dataEntries, defects, releaseNames
         <label style={{ ...commonStyles.label(theme), fontSize: '10px', marginBottom: '2px' }}>Squad</label>
         <select
           value={filters.squadId}
-          onChange={(e) => setFilters(prev => ({ ...prev, squadId: e.target.value, memberId: '' }))}
+          onChange={(e) => setFilters((prev: any) => ({ ...prev, squadId: e.target.value, memberId: '' }))}
           style={commonStyles.select(theme)}
         >
           <option value="">All Squads</option>
@@ -334,7 +327,7 @@ export function FilterBar({ projects, squads, dataEntries, defects, releaseNames
         <label style={{ ...commonStyles.label(theme), fontSize: '10px', marginBottom: '2px' }}>Release</label>
         <select
           value={filters.release}
-          onChange={(e) => setFilters(prev => ({ ...prev, release: e.target.value }))}
+          onChange={(e) => setFilters((prev: any) => ({ ...prev, release: e.target.value }))}
           style={commonStyles.select(theme)}
         >
           <option value="">All Releases</option>
@@ -349,7 +342,7 @@ export function FilterBar({ projects, squads, dataEntries, defects, releaseNames
         <label style={{ ...commonStyles.label(theme), fontSize: '10px', marginBottom: '2px' }}>Sprint</label>
         <select
           value={filters.sprintId || ''}
-          onChange={(e) => setFilters(prev => ({ ...prev, sprintId: e.target.value }))}
+          onChange={(e) => setFilters((prev: any) => ({ ...prev, sprintId: e.target.value }))}
           style={commonStyles.select(theme)}
         >
           <option value="">All Sprints</option>
@@ -366,7 +359,7 @@ export function FilterBar({ projects, squads, dataEntries, defects, releaseNames
         <label style={{ ...commonStyles.label(theme), fontSize: '10px', marginBottom: '2px' }}>Month</label>
         <select
           value={filters.month}
-          onChange={(e) => setFilters(prev => ({ ...prev, month: e.target.value }))}
+          onChange={(e) => setFilters((prev: any) => ({ ...prev, month: e.target.value }))}
           style={commonStyles.select(theme)}
         >
           <option value="">All Months</option>

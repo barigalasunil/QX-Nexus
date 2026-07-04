@@ -62,7 +62,8 @@ const HOLIDAY_FIELDS: KnownField[] = [
 ];
 
 const USER_FIELDS: KnownField[] = [
-  { field: 'username', label: 'Username', required: true },
+  { field: 'employeeId', label: 'Employee ID', required: false },
+  { field: 'username', label: 'Username (Display Name)', required: true },
   { field: 'password', label: 'Password', required: false },
   { field: 'email', label: 'Email', required: false },
   { field: 'role', label: 'Role', required: false },
@@ -131,6 +132,9 @@ const FIELD_ALIASES: Record<string, string> = {
   holiday_type: 'type',
   username: 'username',
   user: 'username',
+  employeeid: 'employeeId',
+  employee_id: 'employeeId',
+  empid: 'employeeId',
   password: 'password',
   pass: 'password',
   email: 'email',
@@ -525,6 +529,7 @@ export function BulkImport({ currentUser, appState, setAppState, showToast, them
 
               newUsers.push({
                 id: generateId(),
+                employeeId: ((entry as any).employeeId || '').trim() || null,
                 username: sanitise(entry.username || ''),
                 password: hashedPassword,
                 email: (entry.email || '').trim(),
@@ -609,7 +614,7 @@ export function BulkImport({ currentUser, appState, setAppState, showToast, them
     dataEntries: 'CSV must include headers: Date, Release, Project ID, Squad ID, Jira Story Link, Jira Story Summary. Optional: TC Created, TC Executed, TC Passed, TC Failed, Notes, Story Status.',
     defects: 'CSV must include headers: Date, Release, Project ID, Squad ID, Jira Defect Link, Jira Defect Summary. Optional: Priority, Status, SIT Miss, Story Link, Story Summary, Notes.',
     holidays: 'CSV must include headers: Date, Name, Type (Holiday or Optional Holiday).',
-    users: 'CSV must include headers: Username. Optional: Password, Email, Role, Squad ID, Project ID, Job Title.',
+    users: 'CSV must include headers: Username. Optional: Employee ID, Password, Email, Role, Squad ID, Project ID, Job Title.',
   };
 
   return (

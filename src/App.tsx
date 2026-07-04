@@ -10,7 +10,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { getTheme, commonStyles } from './theme';
 import { AppState, AuditLogEntry, User } from './types';
-import { formatTime, getEffectivePermissions, hashPassword, isPasswordHash, scopeAppStateForUser } from './utils';
+import { formatTime, getEffectivePermissions, scopeAppStateForUser } from './utils';
 
 const APP_NAME = "QX Nexus";
 import { Sidebar } from '@/components/layout/Sidebar';
@@ -31,16 +31,15 @@ import { Toast } from '@/components/common/Shared';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { NotificationService } from '@/services/NotificationService';
 import { AppStateService } from '@/services/appState.service';
+import { AuthService } from '@/services/auth.service';
+import { useAuth } from '@/contexts/AuthContext';
 import { Bell, HelpCircle, UserCheck, X } from 'lucide-react';
-
-const STORAGE_PREFIX = 'qx-nexus';
-const SESSION_TOKEN_KEY = `${STORAGE_PREFIX}:session-token`;
-const SESSION_USER_KEY = `${STORAGE_PREFIX}:session-user-id`;
 
 const INITIAL_APP_STATE: AppState = {
   users: [
     {
       id: 'superadmin',
+      employeeId: null,
       username: 'superadmin',
       email: '',
       password: 'e34f92a20532a873cb3184398070b4b82a8fa29cf48572c203dc5f0fa6158231',
@@ -95,6 +94,8 @@ const INITIAL_APP_STATE: AppState = {
 };
 
 export default function App() {
+  const { user: authUser, loading: authLoading, login, logout } = useAuth();
+
   // Theme settings (defaults to Dark mode for modern look)
   const [isDark, setIsDark] = useState<boolean>(() => {
     return AppStateService.loadThemePreference(window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true);
@@ -118,20 +119,8 @@ export default function App() {
   const previousNotificationStateRef = React.useRef<AppState | null>(null);
   const [migrationReady, setMigrationReady] = useState(false);
   useEffect(() => {
-    let cancelled = false;
-    const migratePasswords = async () => {
-      const users = await Promise.all(appState.users.map(async user => ({
-        ...user,
-        password: isPasswordHash(user.password) ? user.password : await hashPassword(user.password || ''),
-      })));
-      if (cancelled) return;
-      const migratedState = { ...appState, users };
-      AppStateService.saveAppState(migratedState, { clearLegacy: true });
-      setAppState(migratedState);
-      setMigrationReady(true);
-    };
-    migratePasswords();
-    return () => { cancelled = true; };
+    AppStateService.saveAppState(appState, { clearLegacy: true });
+    setMigrationReady(true);
   }, []);
 
   useEffect(() => {
@@ -190,8 +179,10 @@ export default function App() {
   useEffect(() => {
     if (document.querySelector('meta[http-equiv="Content-Security-Policy"]')) return;
     const meta = document.createElement('meta');
+    const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
+    const connectSources = ["'self'", supabaseUrl].filter(Boolean).join(' ');
     meta.httpEquiv = 'Content-Security-Policy';
-    meta.content = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline';";
+    meta.content = `default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; connect-src ${connectSources};`;
     document.head.appendChild(meta);
   }, []);
 
@@ -228,23 +219,21 @@ export default function App() {
   }, [theme.muted, theme.red, theme.surface, theme.text]);
 
   useEffect(() => {
-    if (!migrationReady) return;
-    const token = sessionStorage.getItem(SESSION_TOKEN_KEY);
-    const userId = sessionStorage.getItem(SESSION_USER_KEY);
-    if (token && userId) {
-      const user = appState.users.find(item => item.id === userId);
-      if (user) {
-        setCurrentUser(user);
-        setProfileName(user.username);
-        setProfileTitle(user.jobTitle || '');
-        setLoggedInSince(new Date().toISOString());
-        if (user.mustChangePassword) setPasswordModal('forced');
-      }
+    if (!migrationReady || authLoading) return;
+    if (authUser) {
+      setCurrentUser(authUser);
+      setProfileName(authUser.username);
+      setProfileTitle(authUser.jobTitle || '');
+      setLoggedInSince(current => current || new Date().toISOString());
+      return;
     }
-  }, [migrationReady]);
+    setCurrentUser(null);
+    setPasswordModal(null);
+  }, [authLoading, authUser, migrationReady]);
 
   // Keep currentUser state in sync with any updates in appState.users (e.g. permissions, username)
   useEffect(() => {
+    if (authUser) return;
     if (currentUser) {
       const latestUser = appState.users.find((u) => u.id === currentUser.id);
       if (latestUser) {
@@ -255,7 +244,7 @@ export default function App() {
         }
       }
     }
-  }, [appState.users, currentUser]);
+  }, [appState.users, authUser, currentUser]);
 
   // Toast Alerts Notification state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning'; duration?: number; exiting?: boolean } | null>(null);
@@ -302,8 +291,8 @@ export default function App() {
     document.head.appendChild(style);
   }, []);
 
-  // Login form inputs
-  const [loginUsername, setLoginUsername] = useState('');
+  // Login form inputs. Email is the authentication credential; username remains display-only.
+  const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
 
   const getFirstAccessibleTab = (user: User): string => {
@@ -312,70 +301,28 @@ export default function App() {
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const uname = loginUsername.trim().toLowerCase();
-    const candidate = appState.users.find((u) => u.username.toLowerCase() === uname);
-    if (!candidate) {
-      showToast('Incorrect username or password.', 'error');
+    const email = loginEmail.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showToast('Please enter a valid email address.', 'error');
       return;
     }
-
-    if (candidate.lockedUntil && Date.now() < candidate.lockedUntil) {
-      const minutes = Math.ceil((candidate.lockedUntil - Date.now()) / 60000);
-      showToast(`Account locked. Try again at ${formatTime(new Date(candidate.lockedUntil).toISOString())} (${minutes} minute${minutes === 1 ? '' : 's'}).`, 'error');
-      return;
-    }
-
-    const enteredHash = await hashPassword(loginPassword.trim());
-    if (candidate.password === enteredHash) {
-      const birthdayNull = !candidate.birthday;
-      const updatedUser: User = {
-        ...candidate,
-        loginCount: candidate.loginCount + 1,
-        loginCountWithoutBirthday: birthdayNull ? (candidate.loginCountWithoutBirthday || 0) + 1 : candidate.loginCountWithoutBirthday,
-        failedLoginAttempts: 0,
-        lockedUntil: null,
-        loginHistory: [{ timestamp: new Date().toISOString(), sessionId: crypto.randomUUID?.() || Math.random().toString(36).slice(2) }, ...(candidate.loginHistory || [])].slice(0, 5),
-      };
-      setAppState(prev => ({ ...prev, users: prev.users.map(user => user.id === updatedUser.id ? updatedUser : user) }));
-      sessionStorage.setItem(SESSION_TOKEN_KEY, crypto.randomUUID?.() || Math.random().toString(36).slice(2));
-      sessionStorage.setItem(SESSION_USER_KEY, updatedUser.id);
-      setCurrentUser(updatedUser);
-      setProfileName(updatedUser.username);
-      setProfileTitle(updatedUser.jobTitle || '');
+    try {
+      const profile = await login(email, loginPassword);
+      setCurrentUser(profile);
+      setProfileName(profile.username);
+      setProfileTitle(profile.jobTitle || '');
       setLoggedInSince(new Date().toISOString());
       setSessionExpired(false);
-      const passwordAgeDays = updatedUser.passwordChangedAt
-        ? (Date.now() - new Date(updatedUser.passwordChangedAt).getTime()) / 86400000
-        : 31;
-      const showPwModal = updatedUser.mustChangePassword || (!updatedUser.mustChangePassword && passwordAgeDays > 30);
-      setPasswordModal(showPwModal ? 'forced' : null);
-      // Birthday prompt: show after password modal if applicable
-      const shouldShowBirthdayPrompt = birthdayNull && (updatedUser.loginCountWithoutBirthday || 0) <= 2;
-      if (showPwModal) {
-        // birthday will be shown after password modal closes
-        setPendingBirthdayPrompt(shouldShowBirthdayPrompt);
-      } else {
-        setShowBirthdayPrompt(shouldShowBirthdayPrompt);
-      }
-      // land page: dynamically choose the first accessible tab
-      const targetTab = getFirstAccessibleTab(updatedUser);
-      setCurrentTab(targetTab);
-      showToast(`Welcome back, ${updatedUser.username}!`, 'success');
-      setLoginUsername('');
+      setPasswordModal(null);
+      setPendingBirthdayPrompt(false);
+      setShowBirthdayPrompt(!profile.birthday && (profile.loginCountWithoutBirthday || 0) <= 2);
+      setCurrentTab(getFirstAccessibleTab(profile));
+      showToast(`Welcome back, ${profile.username}!`, 'success');
+      setLoginEmail('');
       setLoginPassword('');
-      appendAudit('LOGIN', 'User signed in.', updatedUser);
-    } else {
-      const attempts = (candidate.failedLoginAttempts || 0) + 1;
-      const lockedUntil = attempts >= 5 ? Date.now() + 15 * 60 * 1000 : null;
-      setAppState(prev => ({
-        ...prev,
-        users: prev.users.map(user => user.id === candidate.id
-          ? { ...user, failedLoginAttempts: attempts >= 5 ? 0 : attempts, lockedUntil }
-          : user),
-      }));
-      showToast(lockedUntil
-        ? 'Account locked due to too many failed attempts. Try again in 15 minutes.'
-        : 'Incorrect username or password.', 'error');
+      appendAudit('LOGIN', 'User signed in.', profile);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Unable to sign in. Please try again.', 'error');
     }
   };
 
@@ -406,13 +353,17 @@ export default function App() {
     setBirthdayMonth('');
   };
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
     appendAudit('LOGOUT', 'User signed out.');
-    sessionStorage.clear();
-    setCurrentUser(null);
-    setPasswordModal(null);
-    showToast('Signed out successfully.', 'success');
-  }, [appendAudit, showToast]);
+    try {
+      await logout();
+      setCurrentUser(null);
+      setPasswordModal(null);
+      showToast('Signed out successfully.', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Unable to sign out. Please try again.', 'error');
+    }
+  }, [appendAudit, logout, showToast]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -424,10 +375,11 @@ export default function App() {
       clearTimeout(logoutTimer);
       lockTimer = setTimeout(() => setIdleLocked(true), 10 * 60 * 1000);
       logoutTimer = setTimeout(() => {
-        sessionStorage.clear();
-        setCurrentUser(null);
-        setPasswordModal(null);
-        setSessionExpired(true);
+        logout().finally(() => {
+          setCurrentUser(null);
+          setPasswordModal(null);
+          setSessionExpired(true);
+        });
       }, 30 * 60 * 1000);
     };
     const events = ['mousemove', 'mousedown', 'keypress', 'touchstart', 'scroll'];
@@ -438,7 +390,7 @@ export default function App() {
       clearTimeout(logoutTimer);
       events.forEach(event => window.removeEventListener(event, reset));
     };
-  }, [currentUser?.id, idleLocked]);
+  }, [currentUser?.id, idleLocked, logout]);
 
   const validateNewPassword = useCallback((value: string, confirmation: string) => {
     if (!value) return 'New password is required.';
@@ -458,14 +410,19 @@ export default function App() {
       return;
     }
     if (passwordModal === 'periodic') {
-      const currentHash = await hashPassword(passwordForm.current);
-      if (currentHash !== currentUser.password) {
+      try {
+        await login(currentUser.email, passwordForm.current);
+      } catch (error) {
         setPasswordError('Current password is incorrect.');
         return;
       }
     }
-    const password = await hashPassword(passwordForm.next);
-    const updated = { ...currentUser, password, mustChangePassword: false, passwordChangedAt: new Date().toISOString() };
+    const { error } = await AuthService.updatePassword(passwordForm.next);
+    if (error) {
+      setPasswordError(error.message || 'Unable to update password.');
+      return;
+    }
+    const updated = { ...currentUser, mustChangePassword: false, passwordChangedAt: new Date().toISOString() };
     setAppState(prev => ({ ...prev, users: prev.users.map(user => user.id === updated.id ? updated : user) }));
     setCurrentUser(updated);
     setPasswordForm({ current: '', next: '', confirm: '' });
@@ -478,13 +435,15 @@ export default function App() {
   const handleUnlock = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!currentUser) return;
-    const enteredHash = await hashPassword(unlockPassword.trim());
-    if (enteredHash === currentUser.password) {
+    try {
+      await login(currentUser.email, unlockPassword.trim());
       setIdleLocked(false);
       setUnlockPassword('');
       setUnlockError('');
       setAppState(previous => ({ ...previous, users: previous.users.map(user => user.id === currentUser.id ? { ...user, failedLoginAttempts: 0 } : user) }));
       return;
+    } catch (error) {
+      // Keep the existing retry/auto-logout behavior while delegating credential checks to Supabase Auth.
     }
     const attempts = (currentUser.failedLoginAttempts || 0) + 1;
     if (attempts >= 5) {
@@ -545,7 +504,7 @@ export default function App() {
     if (tabId === 'home') return true;
     if (tabId === 'profile') return true;
     if (tabId === 'teamStructure') return currentUser.role !== 'member';
-    if (tabId === 'announcements') return currentUser.role === 'superadmin' || currentUser.role === 'admin';
+    if (tabId === 'announcements') return currentUser.role === 'admin';
     if (tabId === 'leaveRequests') return currentUser.role !== 'guest';
 
     const permKey = keyMap[tabId];
@@ -639,7 +598,7 @@ export default function App() {
             >
               Q
             </div>
-            <h1 style={{ fontSize: '24px', fontWeight: 700, margin: '0 0 4px 0', tracking: '-0.025em' }}>
+            <h1 style={{ fontSize: '24px', fontWeight: 700, margin: '0 0 4px 0' }}>
               {APP_NAME}
             </h1>
             <p style={{ margin: 0, fontSize: '14px', color: theme.muted }}>
@@ -660,12 +619,12 @@ export default function App() {
               </div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <label style={commonStyles.label(theme)}>Username</label>
+              <label style={commonStyles.label(theme)}>Email</label>
               <input
-                type="text"
-                placeholder="Username"
-                value={loginUsername}
-                onChange={(e) => setLoginUsername(e.target.value)}
+                type="email"
+                placeholder="Email"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
                 required
                 style={commonStyles.input(theme)}
               />

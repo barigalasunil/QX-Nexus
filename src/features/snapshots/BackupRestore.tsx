@@ -95,9 +95,10 @@ export function BackupRestore({ currentUser, appState, setAppState, showToast, t
 
   const handleRestore = async () => {
     if (!selectedFile) return;
+    const file = selectedFile as File;
 
     try {
-      const text = await selectedFile.text();
+      const text = await file.text();
       const data = JSON.parse(text);
 
       if (!data.users || !Array.isArray(data.users)) {
@@ -116,7 +117,7 @@ export function BackupRestore({ currentUser, appState, setAppState, showToast, t
         username: currentUser.username,
         role: currentUser.role,
         action: 'RESTORE',
-        details: `Restored data from backup ${selectedFile.name}`,
+        details: `Restored data from backup ${file.name}`,
         ipHint: 'Browser session',
       } as AuditLogEntry;
 
@@ -128,7 +129,7 @@ export function BackupRestore({ currentUser, appState, setAppState, showToast, t
 
       showToast('Data restored successfully from backup.', 'success');
       setSelectedFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (fileInputRef.current) fileInputRef.current!.value = '';
     } catch (err) {
       showToast(`Restore failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
     }

@@ -31,7 +31,7 @@ function getAttendancePolicy(user: User) {
   };
 }
 
-function computeLocationStats(timesheetEntries: { userId: string; month: string; workingDays: { date: string; status: string; workLocation: string | null; isWeekendDay: boolean; isWeekendSupport: boolean }[] }[], user: User, year: number, month: number) {
+function computeLocationStats(timesheetEntries: AppState['timesheetEntries'], user: User, year: number, month: number) {
   const monthKey = `${year}-${String(month).padStart(2, '0')}`;
   const policy = getAttendancePolicy(user);
   const entry = timesheetEntries.find(e => e.userId === user.id && e.month === monthKey);
@@ -53,7 +53,7 @@ function computeLocationStats(timesheetEntries: { userId: string; month: string;
   return { count, target: policy.target, remaining: Math.max(policy.target - count, 0), baseOffice: policy.baseOffice, qualifyingLocations: policy.qualifyingLocations, daysRemaining, isCurrentMonth, hasData: workingDays.length > 0 };
 }
 
-function CompactLocationCard({ location, count, target, color, C }) {
+function CompactLocationCard({ location, count, target, color, C }: { location: string; count: number; target: number; color: string; C: ThemeTokens }) {
   const pct = Math.min(Math.round(count / target * 100), 100);
   const remaining = Math.max(target - count, 0);
   const onTrack = pct >= 75;
@@ -262,8 +262,9 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
         }
       }
     });
-    if (worstMetric) {
-      return { type: 'warning' as const, message: `Heads up — your ${worstMetric.label.toLowerCase()} is down ${Math.abs(worstMetric.drop)}% compared to last week. Keep it up and close the gap!` };
+    const metricDrop = worstMetric as { label: string; drop: number } | null;
+    if (metricDrop) {
+      return { type: 'warning' as const, message: `Heads up — your ${metricDrop.label.toLowerCase()} is down ${Math.abs(metricDrop.drop)}% compared to last week. Keep it up and close the gap!` };
     }
     return { type: 'success' as const, message: 'Great week so far! You\'re on track or ahead of last week across all metrics.' };
   }, [personalMetrics, lastWeekMetrics]);

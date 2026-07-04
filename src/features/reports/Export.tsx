@@ -31,7 +31,7 @@ type FilterState = {
 };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const STATUS_COLORS: Record<WorkingDay['status'], string> = {
+const STATUS_COLORS: Record<NonNullable<WorkingDay['status']>, string> = {
   Working: '#16a34a',
   WFH: '#2563eb',
   Leave: '#dc2626',
@@ -230,7 +230,7 @@ export function Export({ currentUser, appState, theme, showToast }: ExportProps)
     const entry = appState.timesheetEntries.find(item => item.userId === user.id && item.month === month);
     const counts = { Working: 0, WFH: 0, Leave: 0, Holiday: 0, Training: 0, Night: 0, Weekend: 0 };
     entry?.workingDays.forEach(day => {
-      if (day.status in counts) counts[day.status as keyof typeof counts]++;
+      if (day.status && day.status in counts) counts[day.status as keyof typeof counts]++;
       if (day.isNightDeployment) counts.Night++;
       if (day.isWeekendSupport) counts.Weekend++;
     });
@@ -394,7 +394,7 @@ export function Export({ currentUser, appState, theme, showToast }: ExportProps)
         <div style={{ overflowX: 'auto' }}>
           <table style={commonStyles.table(theme)}>
             <thead><tr><th style={commonStyles.th(theme)}>Employee</th>{dateColumns.map(date => <th key={date} style={{ ...commonStyles.th(theme), minWidth: '24px', padding: '5px' }}>{Number(date.slice(8))}</th>)}</tr></thead>
-            <tbody>{timesheetUsers.map(user => <tr key={user.id}><td style={{ ...commonStyles.td(theme), fontWeight: 800, fontSize: '11px' }}>{user.username}</td>{dateColumns.map(date => { const entry = appState.timesheetEntries.find(item => item.userId === user.id && item.month === date.slice(0, 7)); const day = entry?.workingDays.find(item => item.date === date); return <td key={date} title={`${user.username}: ${day?.status || 'Not set'} on ${date}`} style={{ ...commonStyles.td(theme), padding: '5px' }}><span style={{ display: 'block', width: '10px', height: '10px', borderRadius: '2px', backgroundColor: day ? STATUS_COLORS[day.status] : theme.border }} /></td>; })}</tr>)}</tbody>
+            <tbody>{timesheetUsers.map(user => <tr key={user.id}><td style={{ ...commonStyles.td(theme), fontWeight: 800, fontSize: '11px' }}>{user.username}</td>{dateColumns.map(date => { const entry = appState.timesheetEntries.find(item => item.userId === user.id && item.month === date.slice(0, 7)); const day = entry?.workingDays.find(item => item.date === date); return <td key={date} title={`${user.username}: ${day?.status || 'Not set'} on ${date}`} style={{ ...commonStyles.td(theme), padding: '5px' }}><span style={{ display: 'block', width: '10px', height: '10px', borderRadius: '2px', backgroundColor: day?.status ? STATUS_COLORS[day.status] : theme.border }} /></td>; })}</tr>)}</tbody>
           </table>
         </div>
       </div>

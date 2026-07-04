@@ -13,13 +13,13 @@ import { BackupRestore } from '@/features/snapshots/BackupRestore';
 import { BulkImport } from '@/features/settings/BulkImport';
 import { Plus, Trash2, Shield, UserX, UserCheck, Key, Settings as SettingsIcon, X, HardDrive } from 'lucide-react';
 
-const BASE_OFFICE_OPTIONS: User['baseOffice'][] = ['Bengaluru', 'Mumbai'];
+const BASE_OFFICE_OPTIONS: NonNullable<User['baseOffice']>[] = ['Bengaluru', 'Mumbai'];
 
 interface SettingsProps {
   currentUser: User;
   appState: AppState;
   setAppState: React.Dispatch<React.SetStateAction<AppState>>;
-  showToast: (msg: string, type: 'success' | 'error') => void;
+  showToast: (msg: string, type: 'success' | 'error' | 'warning') => void;
   theme: ThemeTokens;
   readOnly?: boolean;
   onUpdateCurrentUser?: (user: User) => void;
@@ -30,6 +30,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
 
   // Input states for My Account
   const [editAccountForm, setEditAccountForm] = useState({
+    employeeId: currentUser.employeeId || '',
     username: currentUser.username,
     email: currentUser.email || '',
     password: '',
@@ -56,6 +57,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
 
   // Input states for Users
   const [userForm, setUserForm] = useState({
+    employeeId: '',
     username: '',
     email: '',
     role: 'member' as User['role'],
@@ -95,10 +97,12 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
   const [newSquadName, setNewSquadName] = useState('');
   const [newSquadProjectId, setNewSquadProjectId] = useState(currentUser.projectId || '');
 
-  // Keep username input updated when currentUser profile changes
+  // Keep identity inputs updated when currentUser profile changes.
+  // Username is the display name; email is reserved for authentication.
   useEffect(() => {
     setEditAccountForm(prev => ({
       ...prev,
+      employeeId: currentUser.employeeId || '',
       username: currentUser.username,
       email: currentUser.email || '',
     }));
@@ -209,11 +213,13 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     e.preventDefault();
 
     const username = userForm.username.trim().toLowerCase();
+    const employeeId = userForm.employeeId.trim();
     const nextErrors: Record<string, string> = {};
-    if (!username) nextErrors.username = 'Username is required.';
-    else if (username.length < 3) nextErrors.username = 'Username must be at least 3 characters.';
+    if (!username) nextErrors.username = 'Display name is required.';
+    else if (username.length < 3) nextErrors.username = 'Display name must be at least 3 characters.';
     else if (!/^[a-zA-Z0-9_]+$/.test(username)) nextErrors.username = 'Use letters, numbers, and underscores only.';
-    else if (appState.users.some((u) => u.username.toLowerCase() === username)) nextErrors.username = 'Username already exists.';
+    else if (appState.users.some((u) => u.username.toLowerCase() === username)) nextErrors.username = 'Display name already exists.';
+    if (employeeId && appState.users.some((u) => (u.employeeId || '').toLowerCase() === employeeId.toLowerCase())) nextErrors.employeeId = 'Employee ID already exists.';
     if (userForm.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userForm.email)) nextErrors.email = 'Please enter a valid email address.';
     if (!userForm.role || !allowedRoles.includes(userForm.role)) nextErrors.role = 'Role is required.';
     if ((userForm.role === 'admin' || userForm.role === 'lead' || userForm.role === 'member') && !(isAdmin ? currentUser.projectId : userForm.projectId)) {
@@ -244,6 +250,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     // STEP 4 — Save user with hashed password
     const newUser: User = {
       id: generateId(),
+      employeeId: employeeId || null,
       username: sanitise(userForm.username.trim()),
       email: userForm.email.trim(),
       password: hashedPassword,
@@ -298,6 +305,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     }));
 
     setUserForm({
+      employeeId: '',
       username: '',
       email: '',
       role: 'member',
@@ -654,13 +662,15 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
   const handleUpdateMyAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     const newUsername = sanitise(editAccountForm.username.trim());
+    const newEmployeeId = sanitise(editAccountForm.employeeId.trim());
     const newEmail = editAccountForm.email.trim();
     const newPassword = editAccountForm.password;
     const confirmPassword = editAccountForm.confirmPassword;
 
     const nextErrors: Record<string, string> = {};
-    if (!newUsername) nextErrors.username = 'Username is required.';
-    else if (appState.users.some((u) => u.id !== currentUser.id && u.username.toLowerCase() === newUsername.toLowerCase())) nextErrors.username = 'Username is already taken.';
+    if (!newUsername) nextErrors.username = 'Display name is required.';
+    else if (appState.users.some((u) => u.id !== currentUser.id && u.username.toLowerCase() === newUsername.toLowerCase())) nextErrors.username = 'Display name is already taken.';
+    if (newEmployeeId && appState.users.some((u) => u.id !== currentUser.id && (u.employeeId || '').toLowerCase() === newEmployeeId.toLowerCase())) nextErrors.employeeId = 'Employee ID is already taken.';
     if (newEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) nextErrors.email = 'Please enter a valid email address.';
     if (newPassword) {
       if (newPassword.length < 8) nextErrors.password = 'Password must be at least 8 characters.';
@@ -679,6 +689,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
         const updated: User = {
           ...u,
           username: newUsername,
+          employeeId: newEmployeeId || null,
           email: newEmail,
         };
         if (hashedPassword) {
@@ -792,7 +803,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
         {(['users', ...(isSuperAdmin ? ['projects'] : []), 'squads', 'fields', ...(isSuperAdmin ? ['audit'] : []), ...(isSuperAdmin ? ['backup'] : []), ...(isSuperAdmin ? ['import'] : [])] as const).map((tab) => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => setActiveTab(tab as typeof activeTab)}
             style={{
               padding: '12px 16px',
               backgroundColor: 'transparent',
@@ -824,9 +835,18 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
               </h3>
               <form noValidate onSubmit={handleUpdateMyAccount} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
                 <Field
-                  label="New Username"
+                  label="Employee ID"
                   type="text"
-                  placeholder="New Username"
+                  placeholder="Internal employee ID"
+                  value={editAccountForm.employeeId}
+                  onChange={(v) => updateAccountForm('employeeId', v)}
+                  error={accountErrors.employeeId}
+                  theme={theme}
+                />
+                <Field
+                  label="Username (Display Name)"
+                  type="text"
+                  placeholder="Display name"
                   value={editAccountForm.username}
                   onChange={(v) => updateAccountForm('username', v)}
                   error={accountErrors.username}
@@ -896,7 +916,8 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
               Register Team Member
             </h3>
             <form noValidate onSubmit={handleAddUser} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-              <Field label="Username" type="text" placeholder="e.g. janesmith" value={userForm.username} onChange={(v) => updateUserForm('username', v)} error={userErrors.username} required theme={theme} />
+              <Field label="Employee ID" type="text" placeholder="Internal employee ID" value={userForm.employeeId} onChange={(v) => updateUserForm('employeeId', v)} error={userErrors.employeeId} theme={theme} />
+              <Field label="Username (Display Name)" type="text" placeholder="e.g. Jane Smith" value={userForm.username} onChange={(v) => updateUserForm('username', v)} error={userErrors.username} required theme={theme} />
               <Field label="Email Address" type="email" placeholder="user@company.com" value={userForm.email} onChange={(v) => updateUserForm('email', v)} error={userErrors.email} theme={theme} />
               <Field
                 label="Role"
@@ -1112,7 +1133,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                           <td style={commonStyles.td(theme)}>
                             {u.id !== 'superadmin' && canEditSettings ? (
                               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                {u.role !== 'superadmin' && u.role !== 'guest' && (isSuperAdmin || (u.role !== 'admin' && u.role !== 'superadmin')) && <button
+                                {u.role !== 'superadmin' && u.role !== 'guest' && (isSuperAdmin || u.role !== 'admin') && <button
                                   onClick={() => handleToggleEditPermissions(u)}
                                   style={commonStyles.button(theme, 'secondary', 'sm')}
                                   title="Edit Page Permissions"

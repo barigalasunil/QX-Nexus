@@ -136,7 +136,7 @@ export function Sidebar({
               >
                 Q
               </div>
-              <span style={{ fontWeight: 800, fontSize: '15px', tracking: '-0.025em', color: '#ffffff' }}>
+              <span style={{ fontWeight: 800, fontSize: '15px', color: '#ffffff' }}>
                 {APP_NAME}
               </span>
               <span style={{ fontSize: '9px', backgroundColor: `${theme.indigo}44`, color: theme.indigo, padding: '1px 3px', borderRadius: '4px', fontWeight: 600 }}>

@@ -157,7 +157,7 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
             message: `${currentUser.username} adjusted your timesheet for ${key}.`,
             read: false,
             createdAt: modifiedAt,
-            type: 'info',
+            type: 'info' as const,
             link: 'timesheet',
           }, ...(user.notifications || [])].slice(0, 50),
         } : user) : cur.users,

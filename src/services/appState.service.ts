@@ -66,6 +66,7 @@ export const AppStateService = {
           const role = u.role === 'superadmin' ? 'superadmin' : u.role;
           return {
             ...u,
+            employeeId: u.employeeId ?? u.employee_id ?? null,
             email: u.email ?? '',
             projectId: role === 'superadmin' ? null : (u.projectId ?? null),
             squadId: role === 'superadmin' || role === 'admin' ? null : (u.squadId ?? null),

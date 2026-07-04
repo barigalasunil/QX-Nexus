@@ -16,6 +16,8 @@ export interface UserPermissions {
 
 export interface User {
   id: string;
+  employeeId: string | null;
+  // Username is the application display name only. Authentication uses email.
   username: string;
   password?: string;
   role: 'superadmin' | 'admin' | 'lead' | 'member' | 'guest';
@@ -196,7 +198,8 @@ export interface AuditLogEntry {
     | 'HOLIDAY_ADD' | 'HOLIDAY_DELETE' | 'RELEASE_ADD'
     | 'BACKUP' | 'RESTORE'
     | 'ANNOUNCEMENT_ADD' | 'ANNOUNCEMENT_DELETE'
-    | 'LEAVE_APPROVED' | 'LEAVE_REJECTED';
+    | 'LEAVE_APPROVED' | 'LEAVE_REJECTED'
+    | string;
   details: string;
   ipHint: string;
 }
