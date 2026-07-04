@@ -3,13 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// App state service for loading, migrating, and saving the persisted QX Nexus
-// state. UI components should call this service instead of reaching into
-// localStorage directly.
+// App state service for loading, migrating, and saving persisted QX Nexus data.
+// It obtains its repository through RepositoryFactory so the storage backend
+// can change without touching UI components or business workflows.
 
 import { AppState } from '@/types';
 import { generateId, getPermissionsForRole } from '@/utils';
-import { localStorageRepository } from '@/repositories/localStorageRepository';
+import { RepositoryFactory } from '@/repositories/RepositoryFactory';
 
 type SaveOptions = {
   clearLegacy?: boolean;
@@ -17,16 +17,16 @@ type SaveOptions = {
 
 export const AppStateService = {
   loadThemePreference(defaultIsDark: boolean): boolean {
-    const saved = localStorageRepository.loadThemePreference();
+    const saved = RepositoryFactory.getRepository().loadThemePreference();
     return saved ? saved === 'dark' : defaultIsDark;
   },
 
   saveThemePreference(isDark: boolean) {
-    localStorageRepository.saveThemePreference(isDark ? 'dark' : 'light');
+    RepositoryFactory.getRepository().saveThemePreference(isDark ? 'dark' : 'light');
   },
 
   loadAppState(initialState: AppState): AppState {
-    const saved = localStorageRepository.loadAppState();
+    const saved = RepositoryFactory.getRepository().loadAppState();
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -260,13 +260,14 @@ export const AppStateService = {
   },
 
   saveAppState(appState: AppState, options: SaveOptions = {}) {
-    localStorageRepository.saveAppState(JSON.stringify(appState));
+    const repository = RepositoryFactory.getRepository();
+    repository.saveAppState(JSON.stringify(appState));
     if (options.clearLegacy) {
-      localStorageRepository.clearLegacyAppState();
+      repository.clearLegacyAppState();
     }
   },
 
   clearAppState() {
-    localStorageRepository.clearAppState();
+    RepositoryFactory.getRepository().clearAppState();
   },
 };
