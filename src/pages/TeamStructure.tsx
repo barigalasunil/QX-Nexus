@@ -5,7 +5,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Search } from 'lucide-react';
-import { ThemeTokens, commonStyles } from '@/theme';
+import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, User } from '@/types';
 
 interface TeamStructureProps {

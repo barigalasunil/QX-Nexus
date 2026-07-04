@@ -5,7 +5,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { CalendarCheck, Plus, Trash2 } from 'lucide-react';
-import { ThemeTokens, commonStyles } from '@/theme';
+import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, Holiday, User } from '@/types';
 import { formatDate, generateId, sanitise } from '@/utils';
 import { Field, Badge } from '@/components/common/Shared';

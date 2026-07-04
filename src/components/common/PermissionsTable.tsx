@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { UserPermissions } from '@/types';
-import { ThemeTokens, commonStyles } from '@/theme';
+import { ThemeTokens, commonStyles } from '@/styles/theme';
 
 interface PermissionsTableProps {
   value: UserPermissions;

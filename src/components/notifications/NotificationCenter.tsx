@@ -5,7 +5,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Bell, CheckCheck, ExternalLink, Trash2, X } from 'lucide-react';
-import { commonStyles, ThemeTokens } from '@/theme';
+import { commonStyles, ThemeTokens } from '@/styles/theme';
 import { UserNotification } from '@/types';
 import { NotificationFilter } from '@/services/NotificationService';
 

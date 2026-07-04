@@ -8,31 +8,31 @@
 // Browser dialogs break the UI experience and cannot be styled.
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { getTheme, commonStyles } from './theme';
-import { AppState, AuditLogEntry, User } from './types';
-import { formatTime, getEffectivePermissions, scopeAppStateForUser } from './utils';
+import { getTheme, commonStyles } from '@/styles/theme';
+import { AppState, AuditLogEntry, User } from '@/types';
+import { formatTime, getEffectivePermissions, scopeAppStateForUser } from '@/utils';
 
 const APP_NAME = "QX Nexus";
 import { Sidebar } from '@/components/layout/Sidebar';
-import { Dashboard } from '@/features/dashboard/Dashboard';
-import { DataEntry } from '@/features/stories/DataEntry';
-import { Defects } from '@/features/defects/Defects';
-import { Releases } from '@/features/releases/Releases';
-import { Timesheet } from '@/features/timesheets/Timesheet';
-import { TeamStructure } from '@/features/settings/TeamStructure';
-import { Export } from '@/features/reports/Export';
-import { Settings } from '@/features/settings/Settings';
-import { Announcements } from '@/features/announcements/Announcements';
-import { LeaveRequests } from '@/features/timesheets/LeaveRequests';
-import { BackupRestore } from '@/features/snapshots/BackupRestore';
-import { BulkImport } from '@/features/settings/BulkImport';
+import { Dashboard } from '@/pages/Dashboard';
+import { DataEntry } from '@/pages/DataEntry';
+import { Defects } from '@/pages/Defects';
+import { Releases } from '@/pages/Releases';
+import { Timesheet } from '@/pages/Timesheet';
+import { TeamStructure } from '@/pages/TeamStructure';
+import { Export } from '@/pages/Export';
+import { Settings } from '@/pages/Settings';
+import { Announcements } from '@/pages/Announcements';
+import { LeaveRequests } from '@/pages/LeaveRequests';
+import { BackupRestore } from '@/components/common/BackupRestore';
+import { BulkImport } from '@/components/users/BulkImport';
 import { Home } from '@/pages/Home';
 import { Toast } from '@/components/common/Shared';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { NotificationService } from '@/services/NotificationService';
 import { AppStateService } from '@/services/appState.service';
 import { AuthService } from '@/services/auth.service';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/context/AuthContext';
 import { Bell, HelpCircle, UserCheck, X } from 'lucide-react';
 
 const INITIAL_APP_STATE: AppState = {

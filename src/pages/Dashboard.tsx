@@ -4,11 +4,11 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ThemeTokens, commonStyles } from '@/theme';
+import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, User } from '@/types';
 import { StatCard, FilterBar } from '@/components/common/Shared';
 import { Megaphone, FileText } from 'lucide-react';
-import { RecentActivityWidget } from './RecentActivityWidget';
+import { RecentActivityWidget } from '@/components/activity/RecentActivityWidget';
 
 interface DashboardProps {
   currentUser: User;

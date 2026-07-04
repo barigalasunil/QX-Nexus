@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo, useRef } from 'react';
-import { ThemeTokens, commonStyles } from '@/theme';
+import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, User, AuditLogEntry, BackupMetadata } from '@/types';
 import { generateId } from '@/utils';
 import { Download, Upload, HardDrive, Clock, Archive, RefreshCw, Trash2, AlertTriangle, Check, Database } from 'lucide-react';

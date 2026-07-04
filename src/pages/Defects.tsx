@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { ThemeTokens, commonStyles } from '@/theme';
+import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, Defect as IDefect, User } from '@/types';
 import { generateId, formatDate, sanitise } from '@/utils';
 import { Field, FilterBar, Badge, ViewOnlyBanner } from '@/components/common/Shared';

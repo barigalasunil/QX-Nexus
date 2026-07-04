@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ThemeTokens, commonStyles } from '@/theme';
+import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState } from '@/types';
 import { getRecentActivities } from '@/services/ActivityService';
 import { Activity, ActivityModule } from '@/repositories/ActivityRepository';

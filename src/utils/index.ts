@@ -4,7 +4,7 @@
  */
 
 import * as XLSX from 'xlsx';
-import { AppState, User, UserPermissions } from './types';
+import { AppState, User, UserPermissions } from '@/types';
 
 export const DEFAULT_PERMISSIONS = {
   superadmin: {

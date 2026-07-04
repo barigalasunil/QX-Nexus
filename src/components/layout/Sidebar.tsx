@@ -21,7 +21,7 @@ import {
   CalendarCheck2,
   Home as HomeIcon
 } from 'lucide-react';
-import { ThemeTokens } from '@/theme';
+import { ThemeTokens } from '@/styles/theme';
 import { User } from '@/types';
 import { getEffectivePermissions } from '@/utils';
 

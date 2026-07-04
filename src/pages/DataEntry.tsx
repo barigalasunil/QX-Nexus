@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ThemeTokens, commonStyles } from '@/theme';
+import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, DataEntry as IDataEntry, User } from '@/types';
 import { generateId, formatDate, sanitise, formatDateTime } from '@/utils';
 import { Field, FilterBar, Badge, ViewOnlyBanner } from '@/components/common/Shared';

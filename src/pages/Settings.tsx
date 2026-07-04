@@ -4,13 +4,13 @@
  */
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { ThemeTokens, commonStyles } from '@/theme';
+import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, CustomField, Project, Squad, User, UserPermissions } from '@/types';
 import { exportToCSV, generateId, generateStrongPassword, getPermissionsForRole, hashPassword, sanitise, formatDateTime } from '@/utils';
 import { Field } from '@/components/common/Shared';
 import { PermissionsTable } from '@/components/common/PermissionsTable';
-import { BackupRestore } from '@/features/snapshots/BackupRestore';
-import { BulkImport } from '@/features/settings/BulkImport';
+import { BackupRestore } from '@/components/common/BackupRestore';
+import { BulkImport } from '@/components/users/BulkImport';
 import { Plus, Trash2, Shield, UserX, UserCheck, Key, Settings as SettingsIcon, X, HardDrive } from 'lucide-react';
 
 const BASE_OFFICE_OPTIONS: NonNullable<User['baseOffice']>[] = ['Bengaluru', 'Mumbai'];

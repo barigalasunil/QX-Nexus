@@ -5,7 +5,7 @@
 
 import React, { useMemo } from 'react';
 import { Filter, X, Check, AlertTriangle } from 'lucide-react';
-import { ThemeTokens, commonStyles } from '@/theme';
+import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { Project, Squad, Sprint } from '@/types';
 import { formatDate } from '@/utils';
 

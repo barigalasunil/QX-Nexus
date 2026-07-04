@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo, useCallback } from 'react';
-import { ThemeTokens, commonStyles } from '@/theme';
+import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, User, LeaveRequest, WorkingDay, AuditLogEntry } from '@/types';
 import { generateId, sanitise, getDaysInMonth } from '@/utils';
 import { CalendarCheck, CheckCircle, XCircle, Clock, Plus, Filter, Send, ThumbsUp, ThumbsDown, MessageSquare, User as UserIcon } from 'lucide-react';
