@@ -8,6 +8,7 @@ import { ThemeTokens, commonStyles } from '@/theme';
 import { AppState, User } from '@/types';
 import { StatCard, FilterBar } from '@/components/common/Shared';
 import { Megaphone, FileText } from 'lucide-react';
+import { RecentActivityWidget } from './RecentActivityWidget';
 
 interface DashboardProps {
   currentUser: User;
@@ -696,6 +697,8 @@ export function Dashboard({ currentUser, appState, theme, onNavigate }: Dashboar
           </table>
         </div>
       </div>
+
+      <RecentActivityWidget appState={appState} theme={theme} />
     </div>
   );
 }
