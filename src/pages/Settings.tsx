@@ -5,12 +5,13 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { ThemeTokens, commonStyles } from '@/styles/theme';
-import { AppState, CustomField, Project, Squad, User, UserPermissions } from '@/types';
+import { AppState, CustomField, Squad, User, UserPermissions } from '@/types';
 import { exportToCSV, generateId, generateStrongPassword, getPermissionsForRole, hashPassword, sanitise, formatDateTime } from '@/utils';
 import { Field } from '@/components/common/Shared';
 import { PermissionsTable } from '@/components/common/PermissionsTable';
 import { BackupRestore } from '@/components/common/BackupRestore';
 import { BulkImport } from '@/components/users/BulkImport';
+import { ProjectsManager } from '@/components/projects/ProjectsManager';
 import { Plus, Trash2, Shield, UserX, UserCheck, Key, Settings as SettingsIcon, X, HardDrive } from 'lucide-react';
 
 const BASE_OFFICE_OPTIONS: NonNullable<User['baseOffice']>[] = ['Bengaluru', 'Mumbai'];
@@ -89,9 +90,6 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
   // States for editing existing user permissions
   const [editingPermissionsUserId, setEditingPermissionsUserId] = useState<string | null>(null);
   const [editingPermissionsVal, setEditingPermissionsVal] = useState<UserPermissions | null>(null);
-
-  // Input states for Projects
-  const [newProjectName, setNewProjectName] = useState('');
 
   // Input states for Squads
   const [newSquadName, setNewSquadName] = useState('');
@@ -523,42 +521,6 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
           }, ...(prev.auditLog || [])].slice(0, 500),
         }));
         showToast('User deleted.', 'success');
-        setConfirmDelete(null);
-      },
-    });
-  };
-
-  // ---------------------------------------------------------------------------
-  // PROJECTS OPERATIONS
-
-  // ---------------------------------------------------------------------------
-  // PROJECTS OPERATIONS
-  // ---------------------------------------------------------------------------
-  const handleAddProject = (e: React.FormEvent) => {
-    e.preventDefault();
-    const name = sanitise(newProjectName.trim());
-    if (!name) return;
-
-    if (appState.projects.some((p) => p.name.toLowerCase() === name.toLowerCase())) {
-      showToast('Project already exists.', 'error');
-      return;
-    }
-
-    const newProj: Project = { id: generateId(), name };
-    setAppState((prev) => ({ ...prev, projects: [...prev.projects, newProj] }));
-    setNewProjectName('');
-    showToast(`Project "${name}" added.`, 'success');
-  };
-
-  const handleRemoveProject = (id: string) => {
-    setConfirmDelete({
-      message: 'Removing this project will invalidate existing metrics referencing it. Proceed?',
-      onConfirm: () => {
-        setAppState((prev) => ({
-          ...prev,
-          projects: prev.projects.filter((p) => p.id !== id),
-        }));
-        showToast('Project removed.', 'success');
         setConfirmDelete(null);
       },
     });
@@ -1233,70 +1195,13 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
 
       {/* 2. PROJECTS MANAGEMENT */}
       {activeTab === 'projects' && isSuperAdmin && (
-        <div style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '24px', flexWrap: 'wrap' }}>
-          
-          {canEditSettings && <div style={commonStyles.card(theme)}>
-            <h3 style={{ fontSize: '15px', fontWeight: 600, color: theme.text, marginBottom: '16px' }}>
-              Add Project Scope
-            </h3>
-            <form onSubmit={handleAddProject} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <Field
-                label="Project Name"
-                type="text"
-                placeholder="e.g. Customer Portal Web"
-                value={newProjectName}
-                onChange={setNewProjectName}
-                required
-                theme={theme}
-              />
-              <button type="submit" style={commonStyles.button(theme, 'primary')}>
-                <Plus size={16} />
-                Add Project
-              </button>
-            </form>
-          </div>}
-
-          {canEditSettings && <div style={commonStyles.card(theme)}>
-            <h3 style={{ fontSize: '15px', fontWeight: 600, color: theme.text, marginBottom: '16px', borderLeft: `4px solid ${theme.blue}`, paddingLeft: '8px' }}>
-              Active Project Portfolios
-            </h3>
-            {appState.projects.length === 0 ? (
-              <p style={{ color: theme.muted, fontSize: '14px' }}>No active projects recorded. Register a project scope.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {appState.projects.map((proj) => (
-                  <div
-                    key={proj.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '10px 16px',
-                      backgroundColor: theme.inputBg,
-                      border: `1px solid ${theme.border}`,
-                      borderRadius: '8px',
-                    }}
-                  >
-                    <span style={{ fontWeight: 600, color: theme.text }}>{proj.name}</span>
-                    <button
-                      onClick={() => handleRemoveProject(proj.id)}
-                      style={{
-                        padding: '6px',
-                        backgroundColor: 'transparent',
-                        border: 'none',
-                        color: theme.red,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>}
-
-        </div>
+        <ProjectsManager
+          createdBy={currentUser.id}
+          showToast={showToast}
+          theme={theme}
+          canEditSettings={canEditSettings}
+          setConfirmDelete={setConfirmDelete}
+        />
       )}
 
       {/* 3. SQUADS MANAGEMENT */}
