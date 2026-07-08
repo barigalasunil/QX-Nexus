@@ -1,7 +1,7 @@
 import { useContext } from 'react';
-import { ReferenceDataContext } from '@/context/ReferenceDataContext';
+import { ReferenceDataContext, ReferenceDataContextValue } from '@/context/ReferenceDataContext';
 
-export function useReferenceData() {
+export function useReferenceData(): ReferenceDataContextValue {
   const context = useContext(ReferenceDataContext);
 
   if (!context) {

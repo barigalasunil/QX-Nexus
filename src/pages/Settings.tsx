@@ -5,13 +5,14 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { ThemeTokens, commonStyles } from '@/styles/theme';
-import { AppState, CustomField, Squad, User, UserPermissions } from '@/types';
+import { AppState, CustomField, User, UserPermissions } from '@/types';
 import { exportToCSV, generateId, generateStrongPassword, getPermissionsForRole, hashPassword, sanitise, formatDateTime } from '@/utils';
 import { Field } from '@/components/common/Shared';
 import { PermissionsTable } from '@/components/common/PermissionsTable';
 import { BackupRestore } from '@/components/common/BackupRestore';
 import { BulkImport } from '@/components/users/BulkImport';
 import { ProjectsManager } from '@/components/projects/ProjectsManager';
+import { SquadsManager } from '@/components/squads/SquadsManager';
 import { Plus, Trash2, Shield, UserX, UserCheck, Key, Settings as SettingsIcon, X, HardDrive } from 'lucide-react';
 
 const BASE_OFFICE_OPTIONS: NonNullable<User['baseOffice']>[] = ['Bengaluru', 'Mumbai'];
@@ -91,10 +92,6 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
   const [editingPermissionsUserId, setEditingPermissionsUserId] = useState<string | null>(null);
   const [editingPermissionsVal, setEditingPermissionsVal] = useState<UserPermissions | null>(null);
 
-  // Input states for Squads
-  const [newSquadName, setNewSquadName] = useState('');
-  const [newSquadProjectId, setNewSquadProjectId] = useState(currentUser.projectId || '');
-
   // Keep identity inputs updated when currentUser profile changes.
   // Username is the display name; email is reserved for authentication.
   useEffect(() => {
@@ -109,7 +106,6 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
   useEffect(() => {
     if (isAdmin) {
       setUserForm(prev => ({ ...prev, projectId: currentUser.projectId || '' }));
-      setNewSquadProjectId(currentUser.projectId || '');
     }
   }, [currentUser.projectId, isAdmin]);
 
@@ -193,12 +189,6 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       ? appState.users
       : appState.users.filter(u => u.projectId === currentUser.projectId)
   ), [appState.users, currentUser.projectId, isSuperAdmin]);
-
-  const visibleSquads = useMemo(() => (
-    isSuperAdmin
-      ? appState.squads
-      : appState.squads.filter(s => s.projectId === currentUser.projectId)
-  ), [appState.squads, currentUser.projectId, isSuperAdmin]);
 
   const allowedRoles: User['role'][] = isSuperAdmin
     ? ['superadmin', 'admin', 'lead', 'member', 'guest']
@@ -521,47 +511,6 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
           }, ...(prev.auditLog || [])].slice(0, 500),
         }));
         showToast('User deleted.', 'success');
-        setConfirmDelete(null);
-      },
-    });
-  };
-
-  // ---------------------------------------------------------------------------
-  // SQUADS OPERATIONS
-  // ---------------------------------------------------------------------------
-  const handleAddSquad = (e: React.FormEvent) => {
-    e.preventDefault();
-    const name = sanitise(newSquadName.trim());
-    if (!name) return;
-
-    const projectId = isAdmin ? currentUser.projectId : newSquadProjectId;
-    if (!projectId) {
-      showToast('Select a project for this squad.', 'error');
-      return;
-    }
-
-    if (appState.squads.some((s) => s.projectId === projectId && s.name.toLowerCase() === name.toLowerCase())) {
-      showToast('Squad already exists.', 'error');
-      return;
-    }
-
-    const newSq: Squad = { id: generateId(), name, projectId };
-    setAppState((prev) => ({ ...prev, squads: [...prev.squads, newSq] }));
-    setNewSquadName('');
-    showToast(`Squad "${name}" added.`, 'success');
-  };
-
-  const handleRemoveSquad = (id: string) => {
-    const squad = appState.squads.find(s => s.id === id);
-    if (!squad || (!isSuperAdmin && squad.projectId !== currentUser.projectId)) return;
-    setConfirmDelete({
-      message: 'Removing this Squad will invalidate existing metrics referencing it. Proceed?',
-      onConfirm: () => {
-        setAppState((prev) => ({
-          ...prev,
-          squads: prev.squads.filter((s) => s.id !== id),
-        }));
-        showToast('Squad removed.', 'success');
         setConfirmDelete(null);
       },
     });
@@ -1206,82 +1155,13 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
 
       {/* 3. SQUADS MANAGEMENT */}
       {activeTab === 'squads' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '24px', flexWrap: 'wrap' }}>
-          
-          {canEditSettings && <div style={commonStyles.card(theme)}>
-            <h3 style={{ fontSize: '15px', fontWeight: 600, color: theme.text, marginBottom: '16px' }}>
-              Add Squad Division
-            </h3>
-            <form onSubmit={handleAddSquad} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <Field
-                label="Squad Name"
-                type="text"
-                placeholder="e.g. Payments Squad"
-                value={newSquadName}
-                onChange={setNewSquadName}
-                required
-                theme={theme}
-              />
-              {isSuperAdmin && <Field
-                label="Project"
-                type="select"
-                value={newSquadProjectId}
-                onChange={setNewSquadProjectId}
-                options={projectOptions}
-                placeholder="Select project"
-                required
-                theme={theme}
-              />}
-              <button type="submit" style={commonStyles.button(theme, 'primary')}>
-                <Plus size={16} />
-                Add Squad
-              </button>
-            </form>
-          </div>}
-
-          <div style={commonStyles.card(theme)}>
-            <h3 style={{ fontSize: '15px', fontWeight: 600, color: theme.text, marginBottom: '16px', borderLeft: `4px solid ${theme.indigo}`, paddingLeft: '8px' }}>
-              Active Testing Squads
-            </h3>
-            {visibleSquads.length === 0 ? (
-              <p style={{ color: theme.muted, fontSize: '14px' }}>No squads recorded. Register a squad team.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {visibleSquads.map((sq) => (
-                  <div
-                    key={sq.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '10px 16px',
-                      backgroundColor: theme.inputBg,
-                      border: `1px solid ${theme.border}`,
-                      borderRadius: '8px',
-                    }}
-                  >
-                    <span style={{ fontWeight: 600, color: theme.text }}>
-                      {sq.name}{isSuperAdmin ? ` · ${projectMap.get(sq.projectId || '') || 'Unassigned'}` : ''}
-                    </span>
-                    {canEditSettings && <button
-                      onClick={() => handleRemoveSquad(sq.id)}
-                      style={{
-                        padding: '6px',
-                        backgroundColor: 'transparent',
-                        border: 'none',
-                        color: theme.red,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <Trash2 size={16} />
-                    </button>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-        </div>
+        <SquadsManager
+          currentUser={currentUser}
+          showToast={showToast}
+          theme={theme}
+          canEditSettings={canEditSettings}
+          setConfirmDelete={setConfirmDelete}
+        />
       )}
 
       {/* 4. CUSTOM FIELDS PANEL */}
