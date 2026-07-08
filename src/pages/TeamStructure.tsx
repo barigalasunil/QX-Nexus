@@ -22,6 +22,14 @@ const roleColor: Record<User['role'], string> = {
   guest: '#0d9488',
 };
 
+const roleLabel: Record<User['role'], string> = {
+  superadmin: 'Super Admin',
+  admin: 'Admin',
+  lead: 'Lead',
+  member: 'Member',
+  guest: 'Guest',
+};
+
 export function TeamStructure({ currentUser, appState, theme }: TeamStructureProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
@@ -98,9 +106,9 @@ export function TeamStructure({ currentUser, appState, theme }: TeamStructurePro
               </div>
             </div>
             <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginTop: '8px' }}>
-              <span style={commonStyles.badge(theme, roleColor[user.role])}>{user.role === 'superadmin' ? 'Super Admin' : user.role}</span>
-              <span style={commonStyles.badge(theme, theme.indigo)}>{squadMap.get(user.squadId || '') || 'No squad'}</span>
+              <span style={commonStyles.badge(theme, roleColor[user.role])}>{roleLabel[user.role]}</span>
               <span style={commonStyles.badge(theme, theme.blue)}>{projectMap.get(user.projectId || '') || 'All projects'}</span>
+              <span style={commonStyles.badge(theme, theme.indigo)}>{squadMap.get(user.squadId || '') || 'No squad'}</span>
               <span style={commonStyles.badge(theme, status.color)}>{status.status}</span>
             </div>
           </div>
