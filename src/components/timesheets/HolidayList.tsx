@@ -9,6 +9,7 @@ import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, Holiday, User } from '@/types';
 import { formatDate, generateId, sanitise } from '@/utils';
 import { Field, Badge } from '@/components/common/Shared';
+import { HolidayRepository } from '@/repositories/holiday';
 
 interface HolidayListProps {
   currentUser: User;
@@ -45,7 +46,7 @@ export function HolidayList({ currentUser, appState, setAppState, showToast, the
       .sort((a, b) => a.date.localeCompare(b.date))
   ), [appState.holidays, filters]);
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
     const existing = (appState.holidays || []).find(holiday => holiday.date === form.date);
@@ -66,6 +67,7 @@ export function HolidayList({ currentUser, appState, setAppState, showToast, the
       createdBy: currentUser.username,
       createdAt: new Date().toISOString(),
     };
+    await HolidayRepository.create(holiday);
     setAppState(previous => ({
       ...previous,
       holidays: [...(previous.holidays || []), holiday],
@@ -85,7 +87,8 @@ export function HolidayList({ currentUser, appState, setAppState, showToast, the
     showToast('Holiday added.', 'success');
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
+    await HolidayRepository.delete(id);
     setAppState(previous => ({
       ...previous,
       holidays: (previous.holidays || []).filter(holiday => holiday.id !== id),

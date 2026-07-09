@@ -598,31 +598,27 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     if (Object.keys(nextErrors).length) return;
 
     const hashedPassword = newPassword ? await hashPassword(newPassword) : null;
-    const updatedUsers = appState.users.map((u) => {
-      if (u.id === currentUser.id) {
-        const updated: User = {
-          ...u,
-          username: newUsername,
-          employeeId: newEmployeeId || null,
-          email: newEmail,
-        };
-        if (hashedPassword) {
-          updated.password = hashedPassword;
-          updated.mustChangePassword = false;
-        }
-        return updated;
-      }
-      return u;
-    });
+    const currentAppUser = appState.users.find((u) => u.id === currentUser.id) || currentUser;
+    const updatedUser: User = {
+      ...currentAppUser,
+      username: newUsername,
+      employeeId: newEmployeeId || null,
+      email: newEmail,
+    };
+    if (hashedPassword) {
+      updatedUser.password = hashedPassword;
+      updatedUser.mustChangePassword = false;
+    }
+
+    await UserRepository.update(updatedUser);
 
     setAppState((prev) => ({
       ...prev,
-      users: updatedUsers,
+      users: prev.users.map((u) => (u.id === updatedUser.id ? updatedUser : u)),
     }));
 
-    const updatedCurrentUser = updatedUsers.find((u) => u.id === currentUser.id);
-    if (updatedCurrentUser && onUpdateCurrentUser) {
-      onUpdateCurrentUser(updatedCurrentUser);
+    if (onUpdateCurrentUser) {
+      onUpdateCurrentUser(updatedUser);
     }
 
     setEditAccountForm((prev) => ({

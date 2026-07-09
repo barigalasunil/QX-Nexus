@@ -8,6 +8,8 @@ import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, ReleaseEntry, Sprint, User } from '@/types';
 import { formatDate, formatDateTime, generateId, sanitise } from '@/utils';
 import { Field, ViewOnlyBanner } from '@/components/common/Shared';
+import { ReleaseRepository } from '@/repositories/release';
+import { SprintRepository } from '@/repositories/sprint';
 import { Edit3, HelpCircle, Trash2 } from 'lucide-react';
 
 interface CyclesProps {
@@ -142,7 +144,7 @@ export function Releases({ currentUser, appState, setAppState, showToast, theme,
     return Math.round((uat / total) * 100);
   };
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
     if (!form.releaseName.trim()) nextErrors.releaseName = 'Release Name is required.';
@@ -177,12 +179,17 @@ export function Releases({ currentUser, appState, setAppState, showToast, theme,
       lastEditedBy: null,
       lastEditedAt: null,
     };
+    const releaseNameExists = (appState.releaseNames || []).some(release => release.name.toLowerCase() === cleanReleaseName.toLowerCase());
+    const releaseName = { id: generateId(), name: cleanReleaseName };
+    if (!releaseNameExists) {
+      await ReleaseRepository.create(releaseName);
+    }
     setAppState(previous => ({
       ...previous,
       releaseEntries: [...previous.releaseEntries, entry],
       releaseNames: (previous.releaseNames || []).some(release => release.name.toLowerCase() === cleanReleaseName.toLowerCase())
         ? previous.releaseNames
-        : [...(previous.releaseNames || []), { id: generateId(), name: cleanReleaseName }],
+        : [...(previous.releaseNames || []), releaseName],
       auditLog: [{
         id: generateId(),
         timestamp: new Date().toISOString(),
@@ -258,7 +265,7 @@ export function Releases({ currentUser, appState, setAppState, showToast, theme,
     });
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     const formValues = editFormRef.current;
     const nextErrors: Record<string, string> = {};
     if (!String(formValues.releaseName || '').trim()) nextErrors.releaseName = 'Required';
@@ -291,12 +298,18 @@ export function Releases({ currentUser, appState, setAppState, showToast, theme,
       lastEditedAt: new Date().toISOString(),
     };
 
+    const releaseNameExists = (appState.releaseNames || []).some(release => release.name === updated.releaseName);
+    const releaseName = { id: generateId(), name: updated.releaseName };
+    if (!releaseNameExists) {
+      await ReleaseRepository.create(releaseName);
+    }
+
     setAppState(previous => ({
       ...previous,
       releaseEntries: previous.releaseEntries.map(entry => entry.id === updated.id ? updated : entry),
       releaseNames: (previous.releaseNames || []).some(release => release.name === updated.releaseName)
         ? previous.releaseNames
-        : [...(previous.releaseNames || []), { id: generateId(), name: updated.releaseName }],
+        : [...(previous.releaseNames || []), releaseName],
     }));
     setEditModal(null);
     setEditForm({});
@@ -304,7 +317,7 @@ export function Releases({ currentUser, appState, setAppState, showToast, theme,
     showToast('Release entry updated.', 'success');
   };
 
-  const handleAddSprint = (event: React.FormEvent) => {
+  const handleAddSprint = async (event: React.FormEvent) => {
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
     if (!sprintForm.name.trim()) nextErrors.name = 'Sprint name is required.';
@@ -325,6 +338,7 @@ export function Releases({ currentUser, appState, setAppState, showToast, theme,
       startDate: sprintForm.startDate,
       endDate: sprintForm.endDate,
     };
+    await SprintRepository.create(newSprint);
     setAppState(previous => ({
       ...previous,
       sprints: [...(previous.sprints || []), newSprint],
@@ -337,9 +351,10 @@ export function Releases({ currentUser, appState, setAppState, showToast, theme,
     setConfirmDeleteSprintId(id);
   };
 
-  const handleConfirmDeleteSprint = () => {
+  const handleConfirmDeleteSprint = async () => {
     const id = confirmDeleteSprintId;
     if (!id) return;
+    await SprintRepository.delete(id);
     setAppState(previous => ({
       ...previous,
       sprints: (previous.sprints || []).filter(s => s.id !== id),

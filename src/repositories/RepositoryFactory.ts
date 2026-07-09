@@ -8,7 +8,25 @@
 // localStorage to another backend without touching services or UI components.
 
 import { IAppStateRepository } from '@/repositories/IAppStateRepository';
+import { IAnnouncementRepository } from '@/repositories/announcement';
+import { AnnouncementRepository } from '@/repositories/announcement';
+import { IAuditRepository } from '@/repositories/audit';
+import { AuditRepository } from '@/repositories/audit';
+import { IBackupRepository } from '@/repositories/backup';
+import { BackupRepository } from '@/repositories/backup';
+import { IHolidayRepository } from '@/repositories/holiday';
+import { HolidayRepository } from '@/repositories/holiday';
+import { ILeaveRepository } from '@/repositories/leave';
+import { LeaveRepository } from '@/repositories/leave';
 import { LocalStorageRepository } from '@/repositories/localStorageRepository';
+import { INotificationRepository } from '@/repositories/notification';
+import { NotificationRepository } from '@/repositories/notification';
+import { IRecognitionRepository } from '@/repositories/recognition';
+import { RecognitionRepository } from '@/repositories/recognition';
+import { IReleaseRepository } from '@/repositories/release';
+import { ReleaseRepository } from '@/repositories/release';
+import { ISprintRepository } from '@/repositories/sprint';
+import { SprintRepository } from '@/repositories/sprint';
 import { IUserRepository } from '@/repositories/user';
 import { UserRepository } from '@/repositories/user';
 
@@ -19,5 +37,41 @@ export const RepositoryFactory = {
 
   getUserRepository(): IUserRepository {
     return UserRepository;
+  },
+
+  getReleaseRepository(): IReleaseRepository {
+    return ReleaseRepository;
+  },
+
+  getSprintRepository(): ISprintRepository {
+    return SprintRepository;
+  },
+
+  getHolidayRepository(): IHolidayRepository {
+    return HolidayRepository;
+  },
+
+  getAnnouncementRepository(): IAnnouncementRepository {
+    return AnnouncementRepository;
+  },
+
+  getLeaveRepository(): ILeaveRepository {
+    return LeaveRepository;
+  },
+
+  getNotificationRepository(): INotificationRepository {
+    return NotificationRepository;
+  },
+
+  getAuditRepository(): IAuditRepository {
+    return AuditRepository;
+  },
+
+  getBackupRepository(): IBackupRepository {
+    return BackupRepository;
+  },
+
+  getRecognitionRepository(): IRecognitionRepository {
+    return RecognitionRepository;
   },
 };
