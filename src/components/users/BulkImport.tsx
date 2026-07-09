@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, User, DataEntry, Defect, Holiday, AuditLogEntry } from '@/types';
 import { generateId, hashPassword, sanitise } from '@/utils';
+import { HolidayRepository } from '@/repositories/holiday';
 import { Upload, FileSpreadsheet, AlertTriangle, Check, X, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface BulkImportProps {
@@ -482,6 +483,9 @@ export function BulkImport({ currentUser, appState, setAppState, showToast, them
           });
 
           if (newHolidays.length > 0) {
+            for (const holiday of newHolidays) {
+              await HolidayRepository.create(holiday);
+            }
             setAppState(prev => ({
               ...prev,
               holidays: [...(prev.holidays || []), ...newHolidays],
