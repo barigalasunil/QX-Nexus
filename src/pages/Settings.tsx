@@ -13,6 +13,7 @@ import { BackupRestore } from '@/components/common/BackupRestore';
 import { BulkImport } from '@/components/users/BulkImport';
 import { ProjectsManager } from '@/components/projects/ProjectsManager';
 import { SquadsManager } from '@/components/squads/SquadsManager';
+import { UserRepository } from '@/repositories/user';
 import { Plus, Trash2, Shield, UserX, UserCheck, Key, Settings as SettingsIcon, X, HardDrive } from 'lucide-react';
 
 const BASE_OFFICE_OPTIONS: NonNullable<User['baseOffice']>[] = ['Bengaluru', 'Mumbai'];
@@ -265,6 +266,8 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       loginHistory: [],
       notifications: [],
     };
+
+    await UserRepository.create(newUser);
 
     setAppState((prev) => ({
       ...prev,

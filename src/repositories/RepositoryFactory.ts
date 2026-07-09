@@ -9,9 +9,15 @@
 
 import { IAppStateRepository } from '@/repositories/IAppStateRepository';
 import { LocalStorageRepository } from '@/repositories/localStorageRepository';
+import { IUserRepository } from '@/repositories/user';
+import { UserRepository } from '@/repositories/user';
 
 export const RepositoryFactory = {
   getRepository(): IAppStateRepository {
     return LocalStorageRepository;
+  },
+
+  getUserRepository(): IUserRepository {
+    return UserRepository;
   },
 };
