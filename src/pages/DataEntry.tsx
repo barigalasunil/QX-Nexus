@@ -9,6 +9,7 @@ import { AppState, DataEntry as IDataEntry, User } from '@/types';
 import { generateId, formatDate, sanitise, formatDateTime } from '@/utils';
 import { Field, FilterBar, Badge, ViewOnlyBanner } from '@/components/common/Shared';
 import { Plus, Trash2, HelpCircle, Pencil, ExternalLink, X } from 'lucide-react';
+import { DataEntryRepository } from '@/repositories/dataEntry';
 
 interface DataEntryProps {
   currentUser: User;
@@ -244,19 +245,21 @@ export function DataEntry({ currentUser, appState, setAppState, showToast, theme
       sprintName: sprintObj?.name || '',
     };
 
+    DataEntryRepository.create(newEntry);
+    const addedAudit = {
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      username: currentUser.username,
+      role: currentUser.role,
+      action: 'DATA_ENTRY_ADD',
+      details: `Added story ${newEntry.jiraStorySummary}`,
+      ipHint: 'Browser session',
+    };
     setAppState((prev) => ({
       ...prev,
       dataEntries: [...prev.dataEntries, newEntry],
-      auditLog: [{
-        id: generateId(),
-        timestamp: new Date().toISOString(),
-        userId: currentUser.id,
-        username: currentUser.username,
-        role: currentUser.role,
-        action: 'DATA_ENTRY_ADD',
-        details: `Added story ${newEntry.jiraStorySummary}`,
-        ipHint: 'Browser session',
-      }, ...(prev.auditLog || [])].slice(0, 500),
+      auditLog: [addedAudit, ...(prev.auditLog || [])].slice(0, 500),
     }));
     setNewRowId(newEntry.id);
     setTimeout(() => setNewRowId(null), 1500);
@@ -326,39 +329,42 @@ export function DataEntry({ currentUser, appState, setAppState, showToast, theme
     if (Object.keys(nextErrors).length) return;
     const isCreatedOnly = editForm.tcMode === 'created';
     const editSprintObj = (appState.sprints || []).find(s => s.id === editForm.sprintId);
+    const updatedEntry: IDataEntry = {
+      ...editingEntry,
+      date: editForm.date,
+      release: sanitise(editForm.release.trim()),
+      projectId: editForm.projectId,
+      squadId: editForm.squadId,
+      jiraStoryLink: editForm.jiraStoryLink.trim(),
+      jiraStorySummary: sanitise(editForm.jiraStorySummary.trim()),
+      tcCreated: Number(editForm.tcCreated) || 0,
+      tcExecuted: isCreatedOnly ? null : Number(editForm.tcExecuted) || 0,
+      tcPassed: isCreatedOnly ? null : Number(editForm.tcPassed) || 0,
+      tcFailed: isCreatedOnly ? null : Number(editForm.tcFailed) || 0,
+      notes: sanitise(editForm.notes.trim()),
+      storyStatus: editForm.storyStatus,
+      storyPoints: editForm.storyPoints,
+      lastEditedBy: currentUser.username,
+      lastEditedAt: new Date().toISOString(),
+      lastEditedByRole: currentUser.role,
+      sprintId: editForm.sprintId || '',
+      sprintName: editSprintObj?.name || '',
+    };
+    DataEntryRepository.update(updatedEntry);
+    const editAudit = {
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      username: currentUser.username,
+      role: currentUser.role,
+      action: 'DATA_ENTRY_EDIT',
+      details: `Edited story ${editForm.jiraStorySummary}`,
+      ipHint: 'Browser session',
+    };
     setAppState(previous => ({
       ...previous,
-      dataEntries: previous.dataEntries.map(entry => entry.id === editingEntry.id ? {
-        ...entry,
-        date: editForm.date,
-        release: sanitise(editForm.release.trim()),
-        projectId: editForm.projectId,
-        squadId: editForm.squadId,
-        jiraStoryLink: editForm.jiraStoryLink.trim(),
-        jiraStorySummary: sanitise(editForm.jiraStorySummary.trim()),
-        tcCreated: Number(editForm.tcCreated) || 0,
-        tcExecuted: isCreatedOnly ? null : Number(editForm.tcExecuted) || 0,
-        tcPassed: isCreatedOnly ? null : Number(editForm.tcPassed) || 0,
-        tcFailed: isCreatedOnly ? null : Number(editForm.tcFailed) || 0,
-        notes: sanitise(editForm.notes.trim()),
-        storyStatus: editForm.storyStatus,
-        storyPoints: editForm.storyPoints,
-        lastEditedBy: currentUser.username,
-        lastEditedAt: new Date().toISOString(),
-        lastEditedByRole: currentUser.role,
-        sprintId: editForm.sprintId || '',
-        sprintName: editSprintObj?.name || '',
-      } : entry),
-      auditLog: [{
-        id: generateId(),
-        timestamp: new Date().toISOString(),
-        userId: currentUser.id,
-        username: currentUser.username,
-        role: currentUser.role,
-        action: 'DATA_ENTRY_EDIT',
-        details: `Edited story ${editForm.jiraStorySummary}`,
-        ipHint: 'Browser session',
-      }, ...(previous.auditLog || [])].slice(0, 500),
+      dataEntries: previous.dataEntries.map(entry => entry.id === editingEntry.id ? updatedEntry : entry),
+      auditLog: [editAudit, ...(previous.auditLog || [])].slice(0, 500),
     }));
     setEditingEntry(null);
     setEditForm(null);
@@ -372,6 +378,7 @@ export function DataEntry({ currentUser, appState, setAppState, showToast, theme
   const handleConfirmDeleteEntry = () => {
     const id = confirmDeleteEntryId;
     if (!id) return;
+    DataEntryRepository.delete(id);
     setAppState((prev) => ({
       ...prev,
       dataEntries: prev.dataEntries.filter((e) => e.id !== id)

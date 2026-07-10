@@ -8,6 +8,7 @@ import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, ReleaseEntry, Sprint, User } from '@/types';
 import { formatDate, formatDateTime, generateId, sanitise } from '@/utils';
 import { Field, ViewOnlyBanner } from '@/components/common/Shared';
+import { ReleaseEntryRepository } from '@/repositories/releaseEntry';
 import { ReleaseRepository } from '@/repositories/release';
 import { SprintRepository } from '@/repositories/sprint';
 import { Edit3, HelpCircle, Trash2 } from 'lucide-react';
@@ -184,6 +185,7 @@ export function Releases({ currentUser, appState, setAppState, showToast, theme,
     if (!releaseNameExists) {
       await ReleaseRepository.create(releaseName);
     }
+    await ReleaseEntryRepository.create(entry);
     setAppState(previous => ({
       ...previous,
       releaseEntries: [...previous.releaseEntries, entry],
@@ -223,6 +225,7 @@ export function Releases({ currentUser, appState, setAppState, showToast, theme,
   const handleConfirmDeleteRelease = () => {
     const id = confirmDeleteReleaseId;
     if (!id) return;
+    ReleaseEntryRepository.delete(id);
     setAppState(previous => ({ ...previous, releaseEntries: previous.releaseEntries.filter(entry => entry.id !== id) }));
     showToast('Release entry deleted.', 'success');
     setConfirmDeleteReleaseId(null);
@@ -304,6 +307,7 @@ export function Releases({ currentUser, appState, setAppState, showToast, theme,
       await ReleaseRepository.create(releaseName);
     }
 
+    await ReleaseEntryRepository.update(updated);
     setAppState(previous => ({
       ...previous,
       releaseEntries: previous.releaseEntries.map(entry => entry.id === updated.id ? updated : entry),

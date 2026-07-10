@@ -3,30 +3,67 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { TimesheetEntry } from '@/types';
+import { AppState, TimesheetEntry } from '@/types';
+import { RepositoryFactory } from '@/repositories/RepositoryFactory';
+import { ITimesheetRepository } from '@/repositories/timesheet/ITimesheetRepository';
+
+const loadAppState = (): AppState => {
+  const serializedState = RepositoryFactory.getRepository().loadAppState();
+  if (!serializedState) {
+    throw new Error('App state is not initialized');
+  }
+
+  return JSON.parse(serializedState) as AppState;
+};
+
+const saveAppState = (state: AppState) => {
+  RepositoryFactory.getRepository().saveAppState(JSON.stringify(state));
+};
 
 // Repository boundary for timesheet records.
-// Future Supabase integration should keep timesheet table access here so the
-// current local-storage-backed workflows can be swapped cleanly later.
+// Future backend integration should place timesheets table access here while
+// preserving the current local-storage-backed application behavior.
 
-export const TimesheetRepository = {
+export const TimesheetRepository: ITimesheetRepository = {
   async getAll(): Promise<TimesheetEntry[]> {
-    throw new Error('Not implemented');
+    const state = loadAppState();
+    return state.timesheetEntries;
   },
 
   async getById(id: string): Promise<TimesheetEntry | null> {
-    throw new Error('Not implemented');
+    const state = loadAppState();
+    return state.timesheetEntries.find(entry => entry.id === id) || null;
+  },
+
+  async getByUser(userId: string): Promise<TimesheetEntry[]> {
+    const state = loadAppState();
+    return state.timesheetEntries.filter(entry => entry.userId === userId);
+  },
+
+  async getByMonth(month: string): Promise<TimesheetEntry[]> {
+    const state = loadAppState();
+    return state.timesheetEntries.filter(entry => entry.month === month);
   },
 
   async create(timesheet: TimesheetEntry): Promise<TimesheetEntry> {
-    throw new Error('Not implemented');
+    const state = loadAppState();
+    state.timesheetEntries = [...state.timesheetEntries, timesheet];
+    saveAppState(state);
+    return timesheet;
   },
 
-  async update(id: string, timesheet: Partial<TimesheetEntry>): Promise<TimesheetEntry> {
-    throw new Error('Not implemented');
+  async update(timesheet: TimesheetEntry): Promise<TimesheetEntry> {
+    const state = loadAppState();
+    state.timesheetEntries = state.timesheetEntries.map(existingEntry =>
+      existingEntry.id === timesheet.id ? timesheet : existingEntry,
+    );
+    saveAppState(state);
+    return timesheet;
   },
 
   async delete(id: string): Promise<void> {
-    throw new Error('Not implemented');
+    const state = loadAppState();
+    state.timesheetEntries = state.timesheetEntries.filter(entry => entry.id !== id);
+    saveAppState(state);
   },
 };

@@ -5,6 +5,7 @@ import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, TimesheetEntry, User, WorkingDay } from '@/types';
 import { generateId } from '@/utils';
 import { StatCard, ViewOnlyBanner } from '@/components/common/Shared';
+import { TimesheetRepository } from '@/repositories/timesheet';
 import { HolidayList } from '@/components/timesheets/HolidayList';
 
 const USER_COLORS = ['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444', '#06b6d4', '#f97316', '#84cc16'];
@@ -144,6 +145,15 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
             month: key,
             workingDays: next,
           }];
+
+      const entryToPersist = idx >= 0
+        ? { ...cur.timesheetEntries[idx], workingDays: next }
+        : entries[entries.length - 1];
+      if (idx >= 0) {
+        TimesheetRepository.update(entryToPersist);
+      } else {
+        TimesheetRepository.create(entryToPersist);
+      }
 
       const editingOther = targetId !== currentUser.id;
       const modifiedAt = updatedDay.lastModifiedAt || new Date().toISOString();
