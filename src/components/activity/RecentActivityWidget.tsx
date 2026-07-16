@@ -35,7 +35,7 @@ function formatActivityTime(timestamp: string): string {
   return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) + ` \u2022 ${timeStr}`;
 }
 
-export function RecentActivityWidget({ appState, theme }: RecentActivityWidgetProps) {
+function RecentActivityWidgetInner({ appState, theme }: RecentActivityWidgetProps) {
   const activities = useMemo(() => getRecentActivities(appState, 10), [appState]);
 
   const handleItemClick = () => {
@@ -121,3 +121,5 @@ export function RecentActivityWidget({ appState, theme }: RecentActivityWidgetPr
     </div>
   );
 }
+
+export const RecentActivityWidget = React.memo(RecentActivityWidgetInner);

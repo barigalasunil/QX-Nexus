@@ -21,48 +21,62 @@ const normalizeRole = (role: unknown): User['role'] => {
   return 'member';
 };
 
+/**
+ * Map a profiles table row to the application User type.
+ *
+ * SCHEMA ALIGNMENT (2026-07-14):
+ * The live profiles table has only 9 columns:
+ *   id, email, full_name, role, employee_id, active, must_change_password, created_at, updated_at
+ *
+ * Fields like project_id, squad_id, reports_to, etc. are NOT in the database yet.
+ * They return null/defaults until the migration is applied.
+ */
 const mapProfileToUser = (profile: Record<string, any>, authUser: SupabaseUser): User => {
   const role = normalizeRole(profile.role);
   return {
     id: profile.id || authUser.id,
-    employeeId: profile.employee_id ?? profile.employeeId ?? null,
-    username: profile.username || profile.display_name || profile.full_name || authUser.email || 'User',
+    employeeId: profile.employee_id ?? null,
+    username: profile.full_name || authUser.email || 'User',
     email: profile.email || authUser.email || '',
     password: undefined,
     role,
-    squadId: profile.squad_id ?? profile.squadId ?? null,
-    accessibleSquads: Array.isArray(profile.accessible_squads)
-      ? profile.accessible_squads
-      : Array.isArray(profile.accessibleSquads)
-        ? profile.accessibleSquads
-        : [],
-    projectId: profile.project_id ?? profile.projectId ?? null,
-    permissions: profile.permissions || getPermissionsForRole(role),
-    createdBy: profile.created_by ?? profile.createdBy ?? null,
-    createdByRole: profile.created_by_role ?? profile.createdByRole ?? null,
-    mustChangePassword: false,
-    loginCount: profile.login_count ?? profile.loginCount ?? 0,
-    failedLoginAttempts: 0,
-    lockedUntil: null,
-    passwordChangedAt: profile.password_changed_at ?? profile.passwordChangedAt ?? new Date().toISOString(),
-    loginHistory: [],
+    // Fields not yet in database - return defaults
+    // After migration, these will be populated from the database
+    projectId: profile.project_id ?? null,
+    squadId: profile.squad_id ?? null,
+    reportsTo: profile.reports_to ?? null,
+    jobTitle: profile.job_title || '',
+    baseOffice: (profile.base_office as User['baseOffice']) || 'Bengaluru',
+    permissions: profile.permissions ?? getPermissionsForRole(role),
+    accessibleSquads: profile.accessible_squads ?? [],
+    directReports: profile.direct_reports ?? [],
+    createdBy: profile.created_by ?? null,
+    createdByRole: profile.created_by_role as User['createdByRole'] ?? null,
+    mustChangePassword: profile.must_change_password === true,
+    loginCount: profile.login_count ?? 0,
+    failedLoginAttempts: profile.failed_login_attempts ?? 0,
+    lockedUntil: profile.locked_until ?? null,
+    passwordChangedAt: profile.password_changed_at ?? new Date().toISOString(),
+    loginHistory: profile.login_history ?? [],
     birthday: profile.birthday ?? null,
-    loginCountWithoutBirthday: profile.login_count_without_birthday ?? profile.loginCountWithoutBirthday ?? 0,
-    reportsTo: profile.reports_to ?? profile.reportsTo ?? null,
-    directReports: Array.isArray(profile.direct_reports)
-      ? profile.direct_reports
-      : Array.isArray(profile.directReports)
-        ? profile.directReports
-        : [],
-    jobTitle: profile.job_title ?? profile.jobTitle ?? '',
-    baseOffice: profile.base_office === 'Mumbai' || profile.baseOffice === 'Mumbai' ? 'Mumbai' : 'Bengaluru',
+    loginCountWithoutBirthday: profile.login_count_without_birthday ?? 0,
     notifications: [],
   };
 };
 
 export const AuthService = {
   async signIn(email: string, password: string) {
-    return supabase.auth.signInWithPassword({ email: email.trim(), password });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+
+    if (error) {
+      console.error('Supabase Auth Error:', error);
+      throw error;
+    }
+
+    return { data, error };
   },
 
   async signOut() {
@@ -100,13 +114,17 @@ export const AuthService = {
       .maybeSingle();
 
     if (error) {
-      throw new Error(error.message || 'Unable to load your profile.');
+      console.error('Profile load error:', error);
+      throw error;
     }
 
     if (!data) {
+      console.error('No profile row found for auth user ID:', authUser.id);
       throw new Error('No profile was found for your account. Please contact an administrator.');
     }
 
-    return mapProfileToUser(data, authUser);
+    const user = mapProfileToUser(data, authUser);
+
+    return user;
   },
 };

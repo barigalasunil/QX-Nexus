@@ -8,6 +8,7 @@ import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, User, LeaveRequest, WorkingDay, AuditLogEntry } from '@/types';
 import { generateId, sanitise, getDaysInMonth } from '@/utils';
 import { CalendarCheck, CheckCircle, XCircle, Clock, Plus, Filter, Send, ThumbsUp, ThumbsDown, MessageSquare, User as UserIcon } from 'lucide-react';
+import { UserService } from '@/services/user.service';
 
 interface LeaveRequestsProps {
   currentUser: User;
@@ -62,7 +63,7 @@ export function LeaveRequests({ currentUser, appState, setAppState, showToast, t
         if (lr.status !== 'pending') return false;
         if (currentUser.role === 'superadmin') return true;
         if (currentUser.role === 'admin') {
-          const user = appState.users.find(u => u.id === lr.userId);
+          const user = UserService.getUsersSync().find(u => u.id === lr.userId);
           return user?.projectId === currentUser.projectId;
         }
         if (currentUser.role === 'lead') {
@@ -71,7 +72,7 @@ export function LeaveRequests({ currentUser, appState, setAppState, showToast, t
         return false;
       })
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  }, [appState.leaveRequests, appState.users, currentUser, canReview]);
+  }, [appState.leaveRequests, currentUser, canReview]);
 
   const handleSubmitRequest = (e: React.FormEvent) => {
     e.preventDefault();
@@ -181,32 +182,24 @@ export function LeaveRequests({ currentUser, appState, setAppState, showToast, t
         }
       });
 
-      const requestingUser = prev.users.find(u => u.id === request.userId);
-
-      const updatedUsers = prev.users.map(u =>
-        u.id === request.userId
-          ? {
-              ...u,
-              notifications: [
-                {
-                  id: generateId(),
-                  message: `Your leave request (${request.type}: ${request.startDate} - ${request.endDate}) has been approved by ${currentUser.username}.`,
-                  type: 'success' as const,
-                  read: false,
-                  createdAt: now,
-                  link: 'leave-requests',
-                },
-                ...(u.notifications || []),
-              ].slice(0, 50),
-            }
-          : u
-      );
-
       return {
         ...prev,
         leaveRequests: updatedRequests,
         timesheetEntries: updatedTimesheets,
-        users: updatedUsers,
+        userNotifications: {
+          ...prev.userNotifications,
+          [request.userId]: [
+            {
+              id: generateId(),
+              message: `Your leave request (${request.type}: ${request.startDate} - ${request.endDate}) has been approved by ${currentUser.username}.`,
+              type: 'success' as const,
+              read: false,
+              createdAt: now,
+              link: 'leave-requests',
+            },
+            ...(prev.userNotifications[request.userId] || []),
+          ].slice(0, 50),
+        },
         auditLog: [
           {
             id: generateId(),
@@ -240,29 +233,23 @@ export function LeaveRequests({ currentUser, appState, setAppState, showToast, t
           : lr
       );
 
-      const updatedUsers = prev.users.map(u =>
-        u.id === request.userId
-          ? {
-              ...u,
-              notifications: [
-                {
-                  id: generateId(),
-                  message: `Your leave request (${request.type}: ${request.startDate} - ${request.endDate}) has been rejected by ${currentUser.username}. Reason: ${sanitise(reason)}`,
-                  type: 'alert' as const,
-                  read: false,
-                  createdAt: now,
-                  link: 'leave-requests',
-                },
-                ...(u.notifications || []),
-              ].slice(0, 50),
-            }
-          : u
-      );
-
       return {
         ...prev,
         leaveRequests: updatedRequests,
-        users: updatedUsers,
+        userNotifications: {
+          ...prev.userNotifications,
+          [request.userId]: [
+            {
+              id: generateId(),
+              message: `Your leave request (${request.type}: ${request.startDate} - ${request.endDate}) has been rejected by ${currentUser.username}. Reason: ${sanitise(reason)}`,
+              type: 'alert' as const,
+              read: false,
+              createdAt: now,
+              link: 'leave-requests',
+            },
+            ...(prev.userNotifications[request.userId] || []),
+          ].slice(0, 50),
+        },
         auditLog: [
           {
             id: generateId(),
@@ -440,7 +427,7 @@ export function LeaveRequests({ currentUser, appState, setAppState, showToast, t
               </div>
             </div>
           ) : pendingReviews.map(request => {
-            const user = appState.users.find(u => u.id === request.userId);
+            const user = UserService.getUsersSync().find(u => u.id === request.userId);
             return (
               <div key={request.id} style={commonStyles.card(theme)}>
                 <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>

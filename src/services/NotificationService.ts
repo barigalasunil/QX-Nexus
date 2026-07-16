@@ -3,8 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Announcement, AppState, Defect, ReleaseEntry, Sprint, User, UserNotification } from '@/types';
+import { AppState, UserNotification } from '@/types';
 import { generateId } from '@/utils';
+import { UserService } from '@/services/user.service';
 
 export type NotificationFilter = 'all' | 'unread' | 'release' | 'sprint' | 'defect' | 'announcement' | 'system';
 
@@ -24,7 +25,7 @@ const addDays = (dateKey: string, days: number) => {
   return date.toISOString().slice(0, 10);
 };
 
-const sameRelease = (a: ReleaseEntry, b: ReleaseEntry) => (
+const sameRelease = (a: any, b: any) => (
   a.releaseName === b.releaseName
   && a.projectId === b.projectId
   && a.squadId === b.squadId
@@ -37,38 +38,60 @@ const sameRelease = (a: ReleaseEntry, b: ReleaseEntry) => (
   && (a.uatStoryPoints ?? null) === (b.uatStoryPoints ?? null)
 );
 
-const sameSprint = (a: Sprint, b: Sprint) => (
+const sameSprint = (a: any, b: any) => (
   a.name === b.name
   && a.startDate === b.startDate
   && a.endDate === b.endDate
 );
 
-const targetUsers = (state: AppState, predicate: (user: User) => boolean) => (
-  state.users.filter(predicate).map(user => user.id)
-);
-
 const unique = (ids: string[]) => Array.from(new Set(ids.filter(Boolean)));
+
+/** Helper to add a notification to specific users in AppState.userNotifications. */
+function addNotificationsToUsers(
+  state: AppState,
+  userIds: string[],
+  draft: NotificationDraft,
+): AppState {
+  const recipients = unique(userIds);
+  if (recipients.length === 0) return state;
+  const notification = normalizeNotification(draft);
+  const newMap = { ...state.userNotifications };
+  for (const uid of recipients) {
+    const existing = newMap[uid] || [];
+    if (notification.dedupeKey && existing.some((item: UserNotification) => item.dedupeKey === notification.dedupeKey)) continue;
+    newMap[uid] = [notification, ...existing].slice(0, MAX_NOTIFICATIONS_PER_USER);
+  }
+  return { ...state, userNotifications: newMap };
+}
+
+function normalizeNotification(n: Partial<UserNotification>): UserNotification {
+  return {
+    id: n.id || generateId(),
+    title: n.title,
+    message: n.message || 'Notification',
+    type: n.type || 'info',
+    category: n.category || 'system',
+    priority: n.priority || 'normal',
+    read: n.read ?? false,
+    createdAt: n.createdAt || new Date().toISOString(),
+    link: n.link,
+    actionLabel: n.actionLabel,
+    dedupeKey: n.dedupeKey,
+  };
+}
+
+/** Get user IDs matching a predicate using UserService cache. */
+function targetUserIds(predicate: (user: any) => boolean): string[] {
+  return UserService.getUsersSync().filter(predicate).map(u => u.id);
+}
 
 export const NotificationService = {
   normalize(notification: Partial<UserNotification>): UserNotification {
-    return {
-      id: notification.id || generateId(),
-      title: notification.title,
-      message: notification.message || 'Notification',
-      type: notification.type || 'info',
-      category: notification.category || 'system',
-      priority: notification.priority || 'normal',
-      read: notification.read ?? false,
-      createdAt: notification.createdAt || new Date().toISOString(),
-      link: notification.link,
-      actionLabel: notification.actionLabel,
-      dedupeKey: notification.dedupeKey,
-    };
+    return normalizeNotification(notification);
   },
 
   getForUser(state: AppState, userId: string): UserNotification[] {
-    const user = state.users.find(item => item.id === userId);
-    const userNotifications = (user?.notifications || []).map(item => this.normalize(item));
+    const userNotifs = (state.userNotifications[userId] || []).map(item => this.normalize(item));
     const legacyNotifications = (state.notifications || [])
       .filter(item => item.userId === userId)
       .map(item => this.normalize({
@@ -80,62 +103,53 @@ export const NotificationService = {
         category: item.type === 'defect' ? 'defect' : item.type === 'password' ? 'password' : 'system',
       }));
 
-    return [...userNotifications, ...legacyNotifications]
+    return [...userNotifs, ...legacyNotifications]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, MAX_NOTIFICATIONS_PER_USER);
   },
 
   addForUsers(state: AppState, userIds: string[], draft: NotificationDraft): AppState {
-    const recipients = unique(userIds);
-    if (recipients.length === 0) return state;
-    const notification = this.normalize(draft);
-
-    return {
-      ...state,
-      users: state.users.map(user => {
-        if (!recipients.includes(user.id)) return user;
-        const existing = user.notifications || [];
-        if (notification.dedupeKey && existing.some(item => item.dedupeKey === notification.dedupeKey)) return user;
-        return {
-          ...user,
-          notifications: [notification, ...existing.map(item => this.normalize(item))].slice(0, MAX_NOTIFICATIONS_PER_USER),
-        };
-      }),
-    };
+    return addNotificationsToUsers(state, userIds, draft);
   },
 
   markRead(state: AppState, userId: string, notificationId: string): AppState {
+    const existing = state.userNotifications[userId] || [];
     return {
       ...state,
-      users: state.users.map(user => user.id === userId
-        ? { ...user, notifications: (user.notifications || []).map(item => item.id === notificationId ? { ...item, read: true } : item) }
-        : user),
+      userNotifications: {
+        ...state.userNotifications,
+        [userId]: existing.map(item => item.id === notificationId ? { ...item, read: true } : item),
+      },
       notifications: (state.notifications || []).map(item => item.id === notificationId ? { ...item, read: true } : item),
     };
   },
 
   markAllRead(state: AppState, userId: string): AppState {
+    const existing = state.userNotifications[userId] || [];
     return {
       ...state,
-      users: state.users.map(user => user.id === userId
-        ? { ...user, notifications: (user.notifications || []).map(item => ({ ...item, read: true })) }
-        : user),
+      userNotifications: {
+        ...state.userNotifications,
+        [userId]: existing.map(item => ({ ...item, read: true })),
+      },
       notifications: (state.notifications || []).map(item => item.userId === userId ? { ...item, read: true } : item),
     };
   },
 
   delete(state: AppState, userId: string, notificationId: string): AppState {
+    const existing = state.userNotifications[userId] || [];
     return {
       ...state,
-      users: state.users.map(user => user.id === userId
-        ? { ...user, notifications: (user.notifications || []).filter(item => item.id !== notificationId) }
-        : user),
+      userNotifications: {
+        ...state.userNotifications,
+        [userId]: existing.filter(item => item.id !== notificationId),
+      },
       notifications: (state.notifications || []).filter(item => item.id !== notificationId),
     };
   },
 
-  releaseRecipients(state: AppState, release: ReleaseEntry): string[] {
-    return targetUsers(state, user => {
+  releaseRecipients(_state: AppState, release: any): string[] {
+    return targetUserIds(user => {
       if (user.role === 'superadmin') return true;
       if (user.role === 'admin') return !user.projectId || user.projectId === release.projectId;
       if (user.role === 'lead') return user.projectId === release.projectId || user.squadId === release.squadId;
@@ -143,8 +157,8 @@ export const NotificationService = {
     });
   },
 
-  defectRecipients(state: AppState, defect: Defect): string[] {
-    return targetUsers(state, user => {
+  defectRecipients(_state: AppState, defect: any): string[] {
+    return targetUserIds(user => {
       if (user.role === 'superadmin') return true;
       if (user.role === 'admin') return !user.projectId || user.projectId === defect.projectId;
       if (user.role === 'lead') return user.projectId === defect.projectId || user.squadId === defect.squadId;
@@ -152,8 +166,8 @@ export const NotificationService = {
     });
   },
 
-  announcementRecipients(state: AppState, announcement: Announcement): string[] {
-    return targetUsers(state, user => (
+  announcementRecipients(_state: AppState, announcement: any): string[] {
+    return targetUserIds(user => (
       announcement.targetRoles.includes(user.role)
       && (!announcement.projectId || user.role === 'superadmin' || user.projectId === announcement.projectId)
     ));
@@ -166,7 +180,6 @@ export const NotificationService = {
     const previousSprints = new Map((previous.sprints || []).map(item => [item.id, item]));
     const previousDefects = new Map((previous.defects || []).map(item => [item.id, item]));
     const previousAnnouncements = new Map((previous.announcements || []).map(item => [item.id, item]));
-    const previousUsers = new Map((previous.users || []).map(item => [item.id, item]));
     const tomorrow = addDays(dateKey, 1);
 
     next.releaseEntries.forEach(release => {
@@ -219,7 +232,7 @@ export const NotificationService = {
     next.sprints.forEach(sprint => {
       const oldSprint = previousSprints.get(sprint.id);
       if (!oldSprint) {
-        updated = this.addForUsers(updated, targetUsers(updated, user => user.role !== 'guest'), {
+        updated = this.addForUsers(updated, targetUserIds(user => user.role !== 'guest'), {
           title: 'Sprint created',
           message: `${sprint.name} was created.`,
           type: 'info',
@@ -230,7 +243,7 @@ export const NotificationService = {
           dedupeKey: `sprint-created:${sprint.id}`,
         });
       } else if (!sameSprint(oldSprint, sprint)) {
-        updated = this.addForUsers(updated, targetUsers(updated, user => user.role !== 'guest'), {
+        updated = this.addForUsers(updated, targetUserIds(user => user.role !== 'guest'), {
           title: 'Sprint updated',
           message: `${sprint.name} sprint dates were updated.`,
           type: 'info',
@@ -284,51 +297,10 @@ export const NotificationService = {
       });
     });
 
-    next.users.forEach(user => {
-      const oldUser = previousUsers.get(user.id);
-      if (!oldUser) return;
-      if ((oldUser.squadId || '') !== (user.squadId || '') && user.squadId) {
-        updated = this.addForUsers(updated, [user.id], {
-          title: 'Squad assignment changed',
-          message: 'You were assigned to a new squad.',
-          type: 'info',
-          category: 'system',
-          priority: 'normal',
-          link: 'teamStructure',
-          actionLabel: 'View Team',
-          dedupeKey: `user-squad:${user.id}:${user.squadId}`,
-        });
-      }
-      if (oldUser.role !== user.role) {
-        updated = this.addForUsers(updated, [user.id], {
-          title: 'Role changed',
-          message: `Your role changed to ${user.role}.`,
-          type: 'warning',
-          category: 'system',
-          priority: 'high',
-          link: 'profile',
-          actionLabel: 'View Profile',
-          dedupeKey: `user-role:${user.id}:${user.role}`,
-        });
-      }
-      if ((oldUser.passwordChangedAt || '') !== (user.passwordChangedAt || '')) {
-        updated = this.addForUsers(updated, [user.id], {
-          title: 'Password changed',
-          message: 'Your password was changed.',
-          type: 'success',
-          category: 'system',
-          priority: 'normal',
-          link: 'profile',
-          actionLabel: 'View Profile',
-          dedupeKey: `password-changed:${user.id}:${user.passwordChangedAt}`,
-        });
-      }
-    });
-
     return updated;
   },
 
-  passwordExpiryReminder(state: AppState, user: User): AppState {
+  passwordExpiryReminder(state: AppState, user: { id: string; passwordChangedAt?: string }): AppState {
     const daysToExpiry = user.passwordChangedAt
       ? 30 - Math.floor((Date.now() - new Date(user.passwordChangedAt).getTime()) / 86400000)
       : 0;

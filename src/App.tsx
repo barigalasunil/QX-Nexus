@@ -11,6 +11,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { getTheme, commonStyles } from '@/styles/theme';
 import { AppState, AuditLogEntry, User } from '@/types';
 import { formatTime, getEffectivePermissions, scopeAppStateForUser } from '@/utils';
+import { UserService } from '@/services/user.service';
 
 const APP_NAME = "QX Nexus";
 import { Sidebar } from '@/components/layout/Sidebar';
@@ -36,44 +37,6 @@ import { useAuth } from '@/context/AuthContext';
 import { Bell, HelpCircle, UserCheck, X } from 'lucide-react';
 
 const INITIAL_APP_STATE: AppState = {
-  users: [
-    {
-      id: 'superadmin',
-      employeeId: null,
-      username: 'superadmin',
-      email: '',
-      password: 'e34f92a20532a873cb3184398070b4b82a8fa29cf48572c203dc5f0fa6158231',
-      role: 'superadmin',
-      squadId: null,
-      accessibleSquads: [],
-      projectId: null,
-      permissions: {
-        dashboard: 'edit',
-        dataEntry: 'edit',
-        defects: 'edit',
-        releases: 'edit',
-        timesheet: 'edit',
-        export: 'edit',
-        holidayList: 'edit',
-        settings: 'edit',
-      },
-      createdBy: 'system',
-      createdByRole: 'superadmin',
-      mustChangePassword: false,
-      birthday: null,
-      loginCountWithoutBirthday: 0,
-      loginCount: 0,
-      failedLoginAttempts: 0,
-      lockedUntil: null,
-      passwordChangedAt: new Date().toISOString(),
-      loginHistory: [],
-      reportsTo: null,
-      directReports: [],
-      jobTitle: 'Platform Owner',
-      baseOffice: 'Bengaluru',
-      notifications: [],
-    },
-  ],
   projects: [],
   squads: [],
   releases: [],
@@ -86,6 +49,7 @@ const INITIAL_APP_STATE: AppState = {
   customFields: [],
   auditLog: [],
   notifications: [],
+  userNotifications: {},
   announcements: [],
   leaveRequests: [],
   backupMetadata: [],
@@ -94,14 +58,14 @@ const INITIAL_APP_STATE: AppState = {
 };
 
 export default function App() {
-  const { user: authUser, loading: authLoading, login, logout } = useAuth();
+  const { user: authUser, loading: authLoading, login: supabaseLogin, logout: supabaseLogout } = useAuth();
 
   // Theme settings (defaults to Dark mode for modern look)
   const [isDark, setIsDark] = useState<boolean>(() => {
     return AppStateService.loadThemePreference(window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true);
   });
 
-  const theme = getTheme(isDark);
+  const theme = useMemo(() => getTheme(isDark), [isDark]);
 
   useEffect(() => {
     AppStateService.saveThemePreference(isDark);
@@ -112,15 +76,26 @@ export default function App() {
 
   // Active view layout state
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
+  const onNavigate = useCallback((tab: string) => { setCurrentTab(tab); }, []);
 
   // Application database state loaded through the app-state service.
   const [appState, setAppState] = useState<AppState>(() => AppStateService.loadAppState(INITIAL_APP_STATE));
 
+  const login = useCallback(async (email: string, password: string): Promise<User> => {
+    return supabaseLogin(email, password);
+  }, [supabaseLogin]);
+
+  const logout = useCallback(async () => {
+    await supabaseLogout();
+  }, [supabaseLogout]);
+
   const previousNotificationStateRef = React.useRef<AppState | null>(null);
+  const notificationUpdateRef = React.useRef(false);
   const [migrationReady, setMigrationReady] = useState(false);
   useEffect(() => {
     AppStateService.saveAppState(appState, { clearLegacy: true });
     setMigrationReady(true);
+    UserService.getUsers();
   }, []);
 
   useEffect(() => {
@@ -131,11 +106,16 @@ export default function App() {
 
   useEffect(() => {
     if (!migrationReady) return;
+    if (notificationUpdateRef.current) {
+      notificationUpdateRef.current = false;
+      return;
+    }
     const previous = previousNotificationStateRef.current;
     previousNotificationStateRef.current = appState;
     if (!previous) return;
     const withNotifications = NotificationService.applyDetectedNotifications(previous, appState);
     if (withNotifications !== appState) {
+      notificationUpdateRef.current = true;
       previousNotificationStateRef.current = withNotifications;
       setAppState(withNotifications);
     }
@@ -221,7 +201,10 @@ export default function App() {
   useEffect(() => {
     if (!migrationReady || authLoading) return;
     if (authUser) {
-      setCurrentUser(authUser);
+      setCurrentUser(current => {
+        if (current?.id === authUser.id) return current;
+        return authUser;
+      });
       setProfileName(authUser.username);
       setProfileTitle(authUser.jobTitle || '');
       setLoggedInSince(current => current || new Date().toISOString());
@@ -229,22 +212,7 @@ export default function App() {
     }
     setCurrentUser(null);
     setPasswordModal(null);
-  }, [authLoading, authUser, migrationReady]);
-
-  // Keep currentUser state in sync with any updates in appState.users (e.g. permissions, username)
-  useEffect(() => {
-    if (authUser) return;
-    if (currentUser) {
-      const latestUser = appState.users.find((u) => u.id === currentUser.id);
-      if (latestUser) {
-        if (JSON.stringify(latestUser) !== JSON.stringify(currentUser)) {
-          setCurrentUser(latestUser);
-          setProfileName(latestUser.username);
-          setProfileTitle(latestUser.jobTitle || '');
-        }
-      }
-    }
-  }, [appState.users, authUser, currentUser]);
+  }, [authLoading, authUser?.id, migrationReady]);
 
   // Toast Alerts Notification state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning'; duration?: number; exiting?: boolean } | null>(null);
@@ -308,7 +276,9 @@ export default function App() {
     }
     try {
       const profile = await login(email, loginPassword);
+
       setCurrentUser(profile);
+
       setProfileName(profile.username);
       setProfileTitle(profile.jobTitle || '');
       setLoggedInSince(new Date().toISOString());
@@ -317,6 +287,7 @@ export default function App() {
       setPendingBirthdayPrompt(false);
       setShowBirthdayPrompt(!profile.birthday && (profile.loginCountWithoutBirthday || 0) <= 2);
       setCurrentTab(getFirstAccessibleTab(profile));
+
       showToast(`Welcome back, ${profile.username}!`, 'success');
       setLoginEmail('');
       setLoginPassword('');
@@ -339,8 +310,8 @@ export default function App() {
     const mm = birthdayMonth.padStart(2, '0');
     const dd = birthdayDay.padStart(2, '0');
     const updated = { ...currentUser, birthday: `${mm}-${dd}`, loginCountWithoutBirthday: 99 };
-    setAppState(prev => ({ ...prev, users: prev.users.map(u => u.id === updated.id ? updated : u) }));
     setCurrentUser(updated);
+    UserService.updateUser(currentUser, updated);
     setShowBirthdayPrompt(false);
     setBirthdayDay('');
     setBirthdayMonth('');
@@ -423,8 +394,8 @@ export default function App() {
       return;
     }
     const updated = { ...currentUser, mustChangePassword: false, passwordChangedAt: new Date().toISOString() };
-    setAppState(prev => ({ ...prev, users: prev.users.map(user => user.id === updated.id ? updated : user) }));
     setCurrentUser(updated);
+    UserService.updateUser(currentUser, updated);
     setPasswordForm({ current: '', next: '', confirm: '' });
     setPasswordModal(null);
     setPasswordError('');
@@ -440,7 +411,9 @@ export default function App() {
       setIdleLocked(false);
       setUnlockPassword('');
       setUnlockError('');
-      setAppState(previous => ({ ...previous, users: previous.users.map(user => user.id === currentUser.id ? { ...user, failedLoginAttempts: 0 } : user) }));
+      const updatedUser = { ...currentUser, failedLoginAttempts: 0 };
+      setCurrentUser(updatedUser);
+      UserService.updateUser(currentUser, updatedUser);
       return;
     } catch (error) {
       // Keep the existing retry/auto-logout behavior while delegating credential checks to Supabase Auth.
@@ -450,7 +423,9 @@ export default function App() {
       handleLogout();
       return;
     }
-    setAppState(previous => ({ ...previous, users: previous.users.map(user => user.id === currentUser.id ? { ...user, failedLoginAttempts: attempts } : user) }));
+    const updatedUser = { ...currentUser, failedLoginAttempts: attempts };
+    setCurrentUser(updatedUser);
+    UserService.updateUser(currentUser, updatedUser);
     setUnlockError(`Incorrect password. ${5 - attempts} attempt${5 - attempts === 1 ? '' : 's'} remaining.`);
   };
 
@@ -667,7 +642,7 @@ export default function App() {
 
   const activeTabValidated = canAccessTab(currentTab) ? currentTab : getFirstAccessibleTab(currentUser);
   const userPerms = getEffectivePermissions(currentUser);
-  const liveCurrentUser = appState.users.find(user => user.id === currentUser.id) || currentUser;
+  const liveCurrentUser = UserService.getUserById(currentUser.id) || currentUser;
   const allUserNotifications = NotificationService.getForUser(appState, liveCurrentUser.id);
   const unreadNotifications = allUserNotifications.filter(item => !item.read);
 
@@ -691,19 +666,17 @@ export default function App() {
       showToast('Display name is required.', 'error');
       return;
     }
-    setAppState(previous => ({
-      ...previous,
-      users: previous.users.map(user => user.id === currentUser.id ? { ...user, username: nextName, jobTitle: profileTitle.trim() } : user),
-    }));
-    setCurrentUser({ ...currentUser, username: nextName, jobTitle: profileTitle.trim() });
+    const updatedUser = { ...currentUser, username: nextName, jobTitle: profileTitle.trim() };
+    setCurrentUser(updatedUser);
+    UserService.updateUser(currentUser, updatedUser);
     showToast('Profile updated.', 'success');
   };
 
   const renderProfile = () => {
     const projectName = appState.projects.find(project => project.id === currentUser.projectId)?.name || 'Unassigned';
     const squadName = appState.squads.find(squad => squad.id === currentUser.squadId)?.name || 'Unassigned';
-    const manager = appState.users.find(user => user.id === currentUser.reportsTo);
-    const directReports = appState.users.filter(user => user.reportsTo === currentUser.id || (currentUser.directReports || []).includes(user.id));
+    const manager = currentUser.reportsTo ? UserService.getUserById(currentUser.reportsTo) : undefined;
+    const directReports = UserService.getUsersSync().filter(user => user.reportsTo === currentUser.id || (currentUser.directReports || []).includes(user.id));
     const passwordChanged = currentUser.passwordChangedAt ? new Date(currentUser.passwordChangedAt) : null;
     const daysRemaining = passwordChanged ? Math.max(0, 30 - Math.floor((Date.now() - passwordChanged.getTime()) / 86400000)) : 0;
     return (
@@ -984,8 +957,8 @@ export default function App() {
         <main style={{ flex: 1, padding: '16px', overflowY: 'auto', boxSizing: 'border-box' }}>
           <div key={activeTabValidated} className="page-enter">
             {/* Render Active View component */}
-            {activeTabValidated === 'home' && <Home currentUser={currentUser} appState={appState} setAppState={setAppState} theme={theme} onNavigate={setCurrentTab} showToast={showToast} />}
-            {activeTabValidated === 'dashboard' && <Dashboard currentUser={currentUser} appState={scopedAppState} theme={theme} onNavigate={setCurrentTab} />}
+            {activeTabValidated === 'home' && <Home currentUser={currentUser} appState={appState} setAppState={setAppState} theme={theme} onNavigate={onNavigate} showToast={showToast} />}
+            {activeTabValidated === 'dashboard' && <Dashboard currentUser={currentUser} appState={scopedAppState} theme={theme} onNavigate={onNavigate} />}
             {activeTabValidated === 'profile' && renderProfile()}
             {activeTabValidated === 'teamStructure' && <TeamStructure currentUser={currentUser} appState={appState} theme={theme} />}
             

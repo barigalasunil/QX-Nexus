@@ -9,6 +9,7 @@ import { AppState, Defect as IDefect, User } from '@/types';
 import { generateId, formatDate, sanitise } from '@/utils';
 import { Field, FilterBar, Badge, ViewOnlyBanner } from '@/components/common/Shared';
 import { Plus, Trash2, HelpCircle, ExternalLink } from 'lucide-react';
+import { UserService } from '@/services/user.service';
 
 interface DefectsProps {
   currentUser: User;
@@ -210,23 +211,28 @@ export function Defects({ currentUser, appState, setAppState, showToast, theme, 
     };
 
     setAppState((prev) => {
-      const notifyUsers = prev.users.filter(user => (user.role === 'lead' && (user.squadId === newDefect.squadId || user.projectId === newDefect.projectId)) || user.role === 'admin' && user.projectId === newDefect.projectId);
+      const allUsers = UserService.getUsersSync();
+      const notifyUsers = allUsers.filter(user => (user.role === 'lead' && (user.squadId === newDefect.squadId || user.projectId === newDefect.projectId)) || user.role === 'admin' && user.projectId === newDefect.projectId);
+      const newNotifications = notifyUsers.reduce<Record<string, typeof prev.userNotifications[string]>>((acc, user) => {
+        acc[user.id] = [{
+          id: generateId(),
+          message: newDefect.priority === 'P1'
+            ? `P1 defect raised: ${newDefect.jiraDefectSummary}`
+            : `New ${newDefect.priority} defect logged for ${newDefect.release} by ${currentUser.username}.`,
+          read: false,
+          createdAt: new Date().toISOString(),
+          type: newDefect.priority === 'P1' ? 'alert' as const : 'info' as const,
+          link: 'defects',
+        }, ...(prev.userNotifications[user.id] || [])].slice(0, 50);
+        return acc;
+      }, {});
       return {
         ...prev,
         defects: [...prev.defects, newDefect],
-        users: prev.users.map(user => notifyUsers.some(target => target.id === user.id) ? {
-          ...user,
-          notifications: [{
-            id: generateId(),
-            message: newDefect.priority === 'P1'
-              ? `P1 defect raised: ${newDefect.jiraDefectSummary}`
-              : `New ${newDefect.priority} defect logged for ${newDefect.release} by ${currentUser.username}.`,
-            read: false,
-            createdAt: new Date().toISOString(),
-            type: newDefect.priority === 'P1' ? 'alert' as const : 'info' as const,
-            link: 'defects',
-          }, ...(user.notifications || [])].slice(0, 50),
-        } : user),
+        userNotifications: {
+          ...prev.userNotifications,
+          ...newNotifications,
+        },
         auditLog: [{
           id: generateId(),
           timestamp: new Date().toISOString(),

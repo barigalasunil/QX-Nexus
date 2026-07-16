@@ -5,7 +5,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { ThemeTokens, commonStyles } from '@/styles/theme';
-import { AppState, CustomField, User, UserPermissions } from '@/types';
+import { AppState, CustomField, User, UserPermissions, UserNotification } from '@/types';
 import { exportToCSV, generateId, generateStrongPassword, getPermissionsForRole, hashPassword, sanitise, formatDateTime } from '@/utils';
 import { Field } from '@/components/common/Shared';
 import { PermissionsTable } from '@/components/common/PermissionsTable';
@@ -13,7 +13,11 @@ import { BackupRestore } from '@/components/common/BackupRestore';
 import { BulkImport } from '@/components/users/BulkImport';
 import { ProjectsManager } from '@/components/projects/ProjectsManager';
 import { SquadsManager } from '@/components/squads/SquadsManager';
-import { UserRepository } from '@/repositories/user';
+import { UserService } from '@/services/user.service';
+import { useUsers } from '@/hooks/useUsers';
+import { useReferenceData } from '@/hooks/useReferenceData';
+import { useSquads } from '@/hooks/useSquads';
+import { authorize, filterVisibleUsers } from '@/utils/authorization';
 import { Plus, Trash2, Shield, UserX, UserCheck, Key, Settings as SettingsIcon, X, HardDrive } from 'lucide-react';
 
 const BASE_OFFICE_OPTIONS: NonNullable<User['baseOffice']>[] = ['Bengaluru', 'Mumbai'];
@@ -52,7 +56,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
 
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [generatedPassword, setGeneratedPassword] = useState('');
-  const [generatedUsername, setGeneratedUsername] = useState('');
+  const [generatedEmail, setGeneratedEmail] = useState('');
   const [showPwText, setShowPwText] = useState(false);
   const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
   const [resetTargetUser, setResetTargetUser] = useState<User | null>(null);
@@ -118,22 +122,6 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     appliesTo: 'dataEntry' as CustomField['appliesTo'],
   });
 
-  // Lookup maps
-  const projectMap = useMemo(() => new Map(appState.projects.map(p => [p.id, p.name])), [appState.projects]);
-  const squadMap = useMemo(() => new Map(appState.squads.map(s => [s.id, s.name])), [appState.squads]);
-
-  // Project/Squad dropdown values
-  const projectOptions = useMemo(() => {
-    return appState.projects.map(p => ({ value: p.id, label: p.name }));
-  }, [appState.projects]);
-
-  const squadOptions = useMemo(() => {
-    const projectId = isAdmin ? currentUser.projectId : userForm.projectId;
-    return appState.squads
-      .filter(s => !projectId || s.projectId === projectId)
-      .map(s => ({ value: s.id, label: s.name }));
-  }, [appState.squads, currentUser.projectId, isAdmin, userForm.projectId]);
-
   const toggleAccessibleSquad = (squadName: string) => {
     setUserForm(previous => {
       const exists = previous.accessibleSquads.includes(squadName);
@@ -143,7 +131,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       return {
         ...previous,
         accessibleSquads,
-        squadId: appState.squads.find(squad => squad.name === accessibleSquads[0])?.id || '',
+        squadId: squads.find(squad => squad.squad_name === accessibleSquads[0])?.id || '',
       };
     });
     setUserErrors(previous => {
@@ -155,28 +143,37 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
 
   const reportsToOptions = useMemo(() => {
     return getReportingManagerOptions(userForm.role, isAdmin ? currentUser.projectId : userForm.projectId);
-  }, [appState.users, currentUser.projectId, isAdmin, userForm.projectId, userForm.role]);
+  }, [currentUser.projectId, isAdmin, userForm.projectId, userForm.role]);
 
   function getReportingManagerOptions(role: User['role'], projectId?: string | null, excludeUserId?: string) {
+    if (role === 'admin') {
+      // Admin can report to Super Admin (optional)
+      return UserService.getUsersSync()
+        .filter(user => user.id !== excludeUserId)
+        .filter(user => user.role === 'superadmin')
+        .map(user => ({ value: user.id, label: `${user.username}${user.jobTitle ? ` - ${user.jobTitle}` : ''}` }));
+    }
     if (role === 'lead') {
-      return appState.users
+      // Lead reports to Admins assigned to the project, plus Super Admin
+      return UserService.getUsersSync()
         .filter(user => user.id !== excludeUserId)
         .filter(user => user.role === 'admin' || user.role === 'superadmin')
         .filter(user => user.role === 'superadmin' || !projectId || user.projectId === projectId)
         .map(user => ({ value: user.id, label: `${user.username}${user.jobTitle ? ` - ${user.jobTitle}` : ''}` }));
     }
     if (role === 'member') {
-      return appState.users
+      // Member reports to Leads/Admins assigned to project, plus Super Admin
+      return UserService.getUsersSync()
         .filter(user => user.id !== excludeUserId)
-        .filter(user => user.role === 'lead' || user.role === 'admin')
-        .filter(user => !projectId || user.projectId === projectId)
+        .filter(user => user.role === 'lead' || user.role === 'admin' || user.role === 'superadmin')
+        .filter(user => user.role === 'superadmin' || !projectId || user.projectId === projectId)
         .map(user => ({ value: user.id, label: `${user.username}${user.jobTitle ? ` - ${user.jobTitle}` : ''}` }));
     }
     return [];
   }
 
   useEffect(() => {
-    if (userForm.role !== 'lead' && userForm.role !== 'member') {
+    if (userForm.role !== 'admin' && userForm.role !== 'lead' && userForm.role !== 'member') {
       if (userForm.reportsTo) setUserForm(prev => ({ ...prev, reportsTo: '' }));
       return;
     }
@@ -185,11 +182,32 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     }
   }, [reportsToOptions, userForm.reportsTo, userForm.role]);
 
-  const visibleUsers = useMemo(() => (
-    isSuperAdmin
-      ? appState.users
-      : appState.users.filter(u => u.projectId === currentUser.projectId)
-  ), [appState.users, currentUser.projectId, isSuperAdmin]);
+  const { projects } = useReferenceData();
+  const { squads } = useSquads();
+
+  // Lookup maps (from Supabase via ReferenceDataContext & useSquads)
+  const projectMap = useMemo(() => new Map(projects.map(p => [p.id, p.project_name])), [projects]);
+  const squadMap = useMemo(() => new Map(squads.map(s => [s.id, s.squad_name])), [squads]);
+
+  // Project/Squad dropdown values (from Supabase)
+  const projectOptions = useMemo(() => {
+    return projects.map(p => ({ value: p.id, label: p.project_name }));
+  }, [projects]);
+
+  const squadOptions = useMemo(() => {
+    const projectId = isAdmin ? currentUser.projectId : userForm.projectId;
+    return squads
+      .filter(s => !projectId || s.project_id === projectId)
+      .map(s => ({ value: s.id, label: s.squad_name }));
+  }, [squads, currentUser.projectId, isAdmin, userForm.projectId]);
+
+  const allUsers = useUsers();
+  const visibleUsers = useMemo(() => {
+    console.log("Roster users:", allUsers.length);
+    const filtered = filterVisibleUsers(currentUser, allUsers);
+    console.log("Roster after filterVisibleUsers:", filtered.length);
+    return filtered;
+  }, [allUsers, currentUser]);
 
   const allowedRoles: User['role'][] = isSuperAdmin
     ? ['superadmin', 'admin', 'lead', 'member', 'guest']
@@ -207,12 +225,12 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     if (!username) nextErrors.username = 'Display name is required.';
     else if (username.length < 3) nextErrors.username = 'Display name must be at least 3 characters.';
     else if (!/^[a-zA-Z0-9_]+$/.test(username)) nextErrors.username = 'Use letters, numbers, and underscores only.';
-    else if (appState.users.some((u) => u.username.toLowerCase() === username)) nextErrors.username = 'Display name already exists.';
-    if (employeeId && appState.users.some((u) => (u.employeeId || '').toLowerCase() === employeeId.toLowerCase())) nextErrors.employeeId = 'Employee ID already exists.';
+    else if (UserService.getUsersSync().some((u) => u.username.toLowerCase() === username)) nextErrors.username = 'Display name already exists.';
+    if (employeeId && UserService.getUsersSync().some((u) => (u.employeeId || '').toLowerCase() === employeeId.toLowerCase())) nextErrors.employeeId = 'Employee ID already exists.';
     if (userForm.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userForm.email)) nextErrors.email = 'Please enter a valid email address.';
     if (!userForm.role || !allowedRoles.includes(userForm.role)) nextErrors.role = 'Role is required.';
     if ((userForm.role === 'admin' || userForm.role === 'lead' || userForm.role === 'member') && !(isAdmin ? currentUser.projectId : userForm.projectId)) {
-      nextErrors.projectId = userForm.role === 'admin' ? 'Project is required for Admin' : 'Project is required.';
+      nextErrors.projectId = 'Project is required.';
     }
     if ((userForm.role === 'lead' || userForm.role === 'member') && userForm.accessibleSquads.length === 0) nextErrors.squadId = 'Select at least one squad.';
     if ((userForm.role === 'lead' || userForm.role === 'member') && !userForm.reportsTo) {
@@ -225,9 +243,9 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
 
     const projectId = userForm.role === 'superadmin' || userForm.role === 'guest'
       ? null
-      : (isAdmin ? currentUser.projectId : userForm.projectId);
+      : (isAdmin && userForm.role === 'admin' ? currentUser.projectId : userForm.projectId);
     const squadId = userForm.role === 'lead' || userForm.role === 'member'
-      ? (appState.squads.find(squad => squad.name === userForm.accessibleSquads[0])?.id || userForm.squadId)
+      ? (squads.find(squad => squad.squad_name === userForm.accessibleSquads[0])?.id || userForm.squadId)
       : null;
 
     // STEP 1 — Generate plain text password FIRST
@@ -238,7 +256,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
 
     // STEP 4 — Save user with hashed password
     const newUser: User = {
-      id: generateId(),
+      id: crypto.randomUUID(),
       employeeId: employeeId || null,
       username: sanitise(userForm.username.trim()),
       email: userForm.email.trim(),
@@ -267,22 +285,21 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       notifications: [],
     };
 
-    await UserRepository.create(newUser);
+    await UserService.createUser(currentUser, newUser, plainPassword);
 
     setAppState((prev) => ({
       ...prev,
-      users: [...prev.users.map(user => user.id === newUser.reportsTo ? {
-        ...user,
-        directReports: Array.from(new Set([...(user.directReports || []), newUser.id])),
-        notifications: newUser.reportsTo ? [{
+      userNotifications: newUser.reportsTo ? {
+        ...prev.userNotifications,
+        [newUser.reportsTo]: [{
           id: generateId(),
           message: `${newUser.username} has been added as your direct report.`,
           read: false,
           createdAt: new Date().toISOString(),
           type: 'info' as const,
           link: 'teamStructure',
-        }, ...(user.notifications || [])].slice(0, 50) : user.notifications,
-      } : user), newUser],
+        }, ...(prev.userNotifications[newUser.reportsTo] || [])].slice(0, 50),
+      } : prev.userNotifications,
       auditLog: [{
         id: generateId(),
         timestamp: new Date().toISOString(),
@@ -312,13 +329,13 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     setUserPermissions(getPermissionsForRole('member'));
 
     // STEP 5 — Show in-app modal with generated password
-    setGeneratedUsername(userForm.username);
+    setGeneratedEmail(userForm.email);
     setGeneratedPassword(plainPassword);
     setShowPasswordModal(true);
   };
 
   const handleToggleEditPermissions = (u: User) => {
-    if (u.role === 'superadmin' || (!isSuperAdmin && u.role === 'admin')) return;
+    if (!authorize(currentUser, 'editPermissions', u)) return;
     if (editingPermissionsUserId === u.id) {
       setEditingPermissionsUserId(null);
       setEditingPermissionsVal(null);
@@ -329,27 +346,27 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     }
   };
 
-  const handleSaveUserPermissions = (userId: string) => {
+  const handleSaveUserPermissions = async (userId: string) => {
     if (!editingPermissionsVal) return;
+    const target = UserService.getUserById(userId);
+    if (!target || target.role === 'superadmin') return;
+
+    await UserService.updatePermissions(currentUser, userId, editingPermissionsVal);
+
+    const notification: UserNotification = {
+      id: generateId(),
+      message: `Your access permissions were updated by ${currentUser.username}.`,
+      read: false,
+      createdAt: new Date().toISOString(),
+      type: 'info',
+      link: 'profile',
+    };
     setAppState((prev) => ({
       ...prev,
-      users: prev.users.map((user) => {
-        if (user.id === userId && user.role !== 'superadmin') {
-          return {
-            ...user,
-            permissions: editingPermissionsVal,
-            notifications: [{
-              id: generateId(),
-              message: `Your access permissions were updated by ${currentUser.username}.`,
-              read: false,
-              createdAt: new Date().toISOString(),
-              type: 'info' as const,
-              link: 'profile',
-            }, ...(user.notifications || [])].slice(0, 50),
-          };
-        }
-        return user;
-      }),
+      userNotifications: {
+        ...prev.userNotifications,
+        [userId]: [notification, ...(prev.userNotifications[userId] || [])].slice(0, 50),
+      },
       auditLog: [{
         id: generateId(),
         timestamp: new Date().toISOString(),
@@ -357,7 +374,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
         username: currentUser.username,
         role: currentUser.role,
         action: 'PERMISSION_CHANGE',
-        details: `Updated permissions for ${prev.users.find(user => user.id === userId)?.username || userId}`,
+        details: `Updated permissions for ${target.username}`,
         ipHint: 'Browser session',
       }, ...(prev.auditLog || [])].slice(0, 500),
     }));
@@ -366,10 +383,12 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     setEditingPermissionsVal(null);
   };
 
-  const handleBaseOfficeChange = (userId: string, baseOffice: User['baseOffice']) => {
+  const handleBaseOfficeChange = async (userId: string, baseOffice: User['baseOffice']) => {
+    const target = UserService.getUserById(userId);
+    await UserService.updateBaseOffice(currentUser, userId, baseOffice || 'Bengaluru');
+
     setAppState((prev) => ({
       ...prev,
-      users: prev.users.map((user) => user.id === userId ? { ...user, baseOffice: baseOffice || 'Bengaluru' } : user),
       auditLog: [{
         id: generateId(),
         timestamp: new Date().toISOString(),
@@ -377,15 +396,15 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
         username: currentUser.username,
         role: currentUser.role,
         action: 'PERMISSION_CHANGE',
-        details: `Updated base office for ${prev.users.find(user => user.id === userId)?.username || userId} to ${baseOffice || 'Bengaluru'}`,
+        details: `Updated base office for ${target?.username || userId} to ${baseOffice || 'Bengaluru'}`,
         ipHint: 'Browser session',
       }, ...(prev.auditLog || [])].slice(0, 500),
     }));
     showToast('Base Office updated successfully!', 'success');
   };
 
-  const handleReportingManagerChange = (userId: string, reportsTo: string) => {
-    const target = appState.users.find(user => user.id === userId);
+  const handleReportingManagerChange = async (userId: string, reportsTo: string) => {
+    const target = UserService.getUserById(userId);
     if (!target || target.role === 'superadmin' || target.role === 'admin') return;
     const validOptions = getReportingManagerOptions(target.role, target.projectId, target.id);
     if (reportsTo && !validOptions.some(option => option.value === reportsTo)) {
@@ -394,14 +413,29 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     }
     if ((target.reportsTo || '') === reportsTo) return;
 
+    await UserService.updateReportingManager(currentUser, userId, reportsTo || null);
+
+    if (target.reportsTo) {
+      const oldManager = UserService.getUserById(target.reportsTo);
+      if (oldManager) {
+        await UserService.updateUser(currentUser, {
+          ...oldManager,
+          directReports: (oldManager.directReports || []).filter(id => id !== userId),
+        });
+      }
+    }
+    if (reportsTo) {
+      const newManager = UserService.getUserById(reportsTo);
+      if (newManager) {
+        await UserService.updateUser(currentUser, {
+          ...newManager,
+          directReports: Array.from(new Set([...(newManager.directReports || []), userId])),
+        });
+      }
+    }
+
     setAppState((prev) => ({
       ...prev,
-      users: prev.users.map((user) => {
-        if (user.id === userId) return { ...user, reportsTo: reportsTo || null };
-        if (user.id === target.reportsTo) return { ...user, directReports: (user.directReports || []).filter(id => id !== userId) };
-        if (user.id === reportsTo) return { ...user, directReports: Array.from(new Set([...(user.directReports || []), userId])) };
-        return user;
-      }),
       auditLog: [{
         id: generateId(),
         timestamp: new Date().toISOString(),
@@ -416,26 +450,19 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     showToast('Reporting Manager updated successfully!', 'success');
   };
 
-  const handlePromoteToLead = (userId: string) => {
-    setAppState((prev) => ({
-      ...prev,
-      users: prev.users.map((u) => (u.id === userId ? { ...u, role: 'lead' as const } : u)),
-    }));
+  const handlePromoteToLead = async (userId: string) => {
+    await UserService.promote(currentUser, userId);
     showToast('User promoted to Lead.', 'success');
   };
 
-  const handleDemoteToMember = (userId: string) => {
-    if (userId === 'superadmin') return;
-    setAppState((prev) => ({
-      ...prev,
-      users: prev.users.map((u) => (u.id === userId ? { ...u, role: 'member' as const } : u)),
-    }));
+  const handleDemoteToMember = async (userId: string) => {
+    await UserService.demote(currentUser, userId);
     showToast('User demoted to Member.', 'success');
   };
 
   const handleResetPassword = (userId: string) => {
-    const target = appState.users.find(u => u.id === userId);
-    if (!target || (!isSuperAdmin && (target.role === 'admin' || target.role === 'superadmin'))) return;
+    const target = UserService.getUserById(userId);
+    if (!target || !authorize(currentUser, 'resetPassword', target)) return;
     setResetTargetUser(target);
     setShowResetConfirmModal(true);
   };
@@ -445,22 +472,28 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     const target = resetTargetUser;
     const newPlainPassword = generateStrongPassword();
     const password = await hashPassword(newPlainPassword);
+
+    await UserService.updateUser(currentUser, {
+      ...target,
+      password,
+      mustChangePassword: true,
+      passwordChangedAt: new Date().toISOString(),
+    });
+
+    const notification: UserNotification = {
+      id: generateId(),
+      message: `Your password was reset by ${currentUser.username}.`,
+      read: false,
+      createdAt: new Date().toISOString(),
+      type: 'warning',
+      link: 'profile',
+    };
     setAppState((prev) => ({
       ...prev,
-      users: prev.users.map((u) => (u.id === target.id ? {
-        ...u,
-        password,
-        mustChangePassword: true,
-        passwordChangedAt: new Date().toISOString(),
-        notifications: [{
-          id: generateId(),
-          message: `Your password was reset by ${currentUser.username}.`,
-          read: false,
-          createdAt: new Date().toISOString(),
-          type: 'warning' as const,
-          link: 'profile',
-        }, ...(u.notifications || [])].slice(0, 50),
-      } : u)),
+      userNotifications: {
+        ...prev.userNotifications,
+        [target.id]: [notification, ...(prev.userNotifications[target.id] || [])].slice(0, 50),
+      },
       auditLog: [{
         id: generateId(),
         timestamp: new Date().toISOString(),
@@ -477,31 +510,40 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     if (target?.email) {
       showToast(`Password reset for ${target.username}.`, 'success');
     } else {
-      setGeneratedUsername(target.username);
+      setGeneratedEmail(target.email);
       setGeneratedPassword(newPlainPassword);
       setShowPasswordModal(true);
     }
   };
 
   const handleRemoveUser = (userId: string) => {
-    const target = appState.users.find(u => u.id === userId);
-    if (userId === 'superadmin' || userId === currentUser.id || !target ||
-      (!isSuperAdmin && (target.role === 'admin' || target.role === 'superadmin'))) {
+    const target = UserService.getUserById(userId);
+    if (!target || target.id === currentUser.id) {
       showToast('This account cannot be deleted.', 'error');
+      return;
+    }
+    if (!authorize(currentUser, 'delete', target)) {
+      showToast('You do not have permission to delete this user.', 'error');
       return;
     }
     setConfirmDelete({
       message: `Are you sure you want to delete user "${target.username}"? This cannot be undone.`,
-      onConfirm: () => {
+      onConfirm: async () => {
+        const allUsers = UserService.getUsersSync();
+        const affected = allUsers.filter(u =>
+          u.reportsTo === userId || (u.directReports || []).includes(userId)
+        );
+        for (const u of affected) {
+          await UserService.updateUser(currentUser, {
+            ...u,
+            reportsTo: u.reportsTo === userId ? null : u.reportsTo,
+            directReports: (u.directReports || []).filter(id => id !== userId),
+          });
+        }
+        await UserService.deleteUser(currentUser, userId);
+
         setAppState((prev) => ({
           ...prev,
-          users: prev.users
-            .filter((u) => u.id !== userId)
-            .map(user => ({
-              ...user,
-              reportsTo: user.reportsTo === userId ? null : user.reportsTo,
-              directReports: (user.directReports || []).filter(id => id !== userId),
-            })),
           auditLog: [{
             id: generateId(),
             timestamp: new Date().toISOString(),
@@ -583,8 +625,8 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
 
     const nextErrors: Record<string, string> = {};
     if (!newUsername) nextErrors.username = 'Display name is required.';
-    else if (appState.users.some((u) => u.id !== currentUser.id && u.username.toLowerCase() === newUsername.toLowerCase())) nextErrors.username = 'Display name is already taken.';
-    if (newEmployeeId && appState.users.some((u) => u.id !== currentUser.id && (u.employeeId || '').toLowerCase() === newEmployeeId.toLowerCase())) nextErrors.employeeId = 'Employee ID is already taken.';
+    else if (UserService.getUsersSync().some((u) => u.id !== currentUser.id && u.username.toLowerCase() === newUsername.toLowerCase())) nextErrors.username = 'Display name is already taken.';
+    if (newEmployeeId && UserService.getUsersSync().some((u) => u.id !== currentUser.id && (u.employeeId || '').toLowerCase() === newEmployeeId.toLowerCase())) nextErrors.employeeId = 'Employee ID is already taken.';
     if (newEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) nextErrors.email = 'Please enter a valid email address.';
     if (newPassword) {
       if (newPassword.length < 8) nextErrors.password = 'Password must be at least 8 characters.';
@@ -598,7 +640,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
     if (Object.keys(nextErrors).length) return;
 
     const hashedPassword = newPassword ? await hashPassword(newPassword) : null;
-    const currentAppUser = appState.users.find((u) => u.id === currentUser.id) || currentUser;
+    const currentAppUser = UserService.getUserById(currentUser.id) || currentUser;
     const updatedUser: User = {
       ...currentAppUser,
       username: newUsername,
@@ -610,12 +652,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       updatedUser.mustChangePassword = false;
     }
 
-    await UserRepository.update(updatedUser);
-
-    setAppState((prev) => ({
-      ...prev,
-      users: prev.users.map((u) => (u.id === updatedUser.id ? updatedUser : u)),
-    }));
+    await UserService.updateUser(currentUser, updatedUser);
 
     if (onUpdateCurrentUser) {
       onUpdateCurrentUser(updatedUser);
@@ -855,7 +892,6 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                 placeholder="Select project"
                 required
                 error={userErrors.projectId}
-                disabled={isAdmin}
                 theme={theme}
               />}
 
@@ -881,7 +917,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                 </div>
               )}
 
-              {(userForm.role === 'member' || userForm.role === 'lead') && <Field
+              {(userForm.role === 'lead' || userForm.role === 'member') && <Field
                 label="Reports To (Direct Manager)"
                 type="select"
                 value={userForm.reportsTo}
@@ -1008,7 +1044,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                               : (squadMap.get(u.squadId || '') || '—')}
                           </td>
                           <td style={commonStyles.td(theme)}>
-                            {(u.role === 'lead' || u.role === 'member') && canEditSettings ? (
+                            {(u.role === 'lead' || u.role === 'member') && authorize(currentUser, 'changeReportingManager', u) ? (
                               <select
                                 value={u.reportsTo || ''}
                                 onChange={event => handleReportingManagerChange(u.id, event.target.value)}
@@ -1020,12 +1056,12 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                                 ))}
                               </select>
                             ) : (
-                              appState.users.find(user => user.id === u.reportsTo)?.username || '—'
+                              UserService.getUserById(u.reportsTo || '')?.username || '—'
                             )}
                           </td>
                           {isSuperAdmin && <td style={commonStyles.td(theme)}>{projectMap.get(u.projectId || '') || 'All Projects'}</td>}
                           <td style={commonStyles.td(theme)}>
-                            {canEditSettings && u.id !== 'superadmin' ? (
+                            {authorize(currentUser, 'changeBaseOffice', u) ? (
                               <select
                                 value={u.baseOffice || 'Bengaluru'}
                                 onChange={event => handleBaseOfficeChange(u.id, event.target.value as User['baseOffice'])}
@@ -1041,9 +1077,9 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                             {renderPermissionsSummary(u)}
                           </td>
                           <td style={commonStyles.td(theme)}>
-                            {u.id !== 'superadmin' && canEditSettings ? (
+                            {authorize(currentUser, 'view', u) ? (
                               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                {u.role !== 'superadmin' && u.role !== 'guest' && (isSuperAdmin || u.role !== 'admin') && <button
+                                {authorize(currentUser, 'editPermissions', u) && <button
                                   onClick={() => handleToggleEditPermissions(u)}
                                   style={commonStyles.button(theme, 'secondary', 'sm')}
                                   title="Edit Page Permissions"
@@ -1052,7 +1088,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                                   Edit Permissions
                                 </button>}
 
-                                {(u.role === 'member' && (isSuperAdmin || isAdmin)) ? (
+                                {authorize(currentUser, 'promote', u) && u.role === 'member' && (
                                   <button
                                     onClick={() => handlePromoteToLead(u.id)}
                                     style={commonStyles.button(theme, 'secondary', 'sm')}
@@ -1061,7 +1097,8 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                                     <UserCheck size={13} style={{ color: theme.green }} />
                                     Promote
                                   </button>
-                                ) : u.role === 'lead' ? (
+                                )}
+                                {authorize(currentUser, 'demote', u) && u.role === 'lead' && (
                                   <button
                                     onClick={() => handleDemoteToMember(u.id)}
                                     style={commonStyles.button(theme, 'secondary', 'sm')}
@@ -1070,9 +1107,9 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                                     <UserX size={13} style={{ color: theme.orange }} />
                                     Demote
                                   </button>
-                                ) : null}
+                                )}
 
-                                {(isSuperAdmin || (u.role !== 'admin' && u.role !== 'superadmin')) && <button
+                                {authorize(currentUser, 'resetPassword', u) && <button
                                   onClick={() => handleResetPassword(u.id)}
                                   style={commonStyles.button(theme, 'secondary', 'sm')}
                                 >
@@ -1080,7 +1117,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
                                   Reset Password
                                 </button>}
 
-                                {u.id !== currentUser.id && (
+                                {authorize(currentUser, 'delete', u) && u.id !== currentUser.id && (
                                   <button
                                     onClick={() => handleRemoveUser(u.id)}
                                     style={commonStyles.button(theme, 'danger', 'sm')}
@@ -1306,7 +1343,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
             })), 'qa_hub_audit_log')} style={commonStyles.button(theme, 'secondary', 'sm')}>Export CSV</button>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'end', marginBottom: '14px' }}>
-            <Field label="User" type="select" value={auditFilters.user} onChange={(value) => setAuditFilters(prev => ({ ...prev, user: value }))} options={appState.users.map(user => ({ value: user.id, label: user.username }))} placeholder="All Users" theme={theme} />
+            <Field label="User" type="select" value={auditFilters.user} onChange={(value) => setAuditFilters(prev => ({ ...prev, user: value }))} options={UserService.getUsersSync().map(user => ({ value: user.id, label: user.username }))} placeholder="All Users" theme={theme} />
             <Field label="Action" type="select" value={auditFilters.action} onChange={(value) => setAuditFilters(prev => ({ ...prev, action: value }))} options={Array.from(new Set((appState.auditLog || []).map(entry => entry.action))).sort().map(action => ({ value: action, label: action }))} placeholder="All Actions" theme={theme} />
             <Field label="From" type="date" value={auditFilters.from} onChange={(value) => setAuditFilters(prev => ({ ...prev, from: value }))} theme={theme} />
             <Field label="To" type="date" value={auditFilters.to} onChange={(value) => setAuditFilters(prev => ({ ...prev, to: value }))} theme={theme} />
@@ -1365,18 +1402,18 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           onClick={() => {}}>
           <div style={{ background: theme.card, border: `1px solid ${theme.border}`, borderRadius: 12, padding: '32px 28px', width: '100%', maxWidth: 440, boxShadow: '0 20px 60px rgba(0,0,0,0.4)', animation: 'pageEnter 0.2s ease-out forwards' }}
-               onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === 'Escape') { setShowPasswordModal(false); setGeneratedPassword(''); setGeneratedUsername(''); } }}>
+               onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === 'Escape') { setShowPasswordModal(false); setGeneratedPassword(''); setGeneratedEmail(''); } }}>
             <h3 style={{ margin: '0 0 8px', fontSize: '18px', display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 22 }}>🔑</span> User Created Successfully
             </h3>
             <p style={{ fontSize: '13px', color: theme.muted, margin: '0 0 20px' }}>
-              No email address was provided for this user. Share the generated password below securely.
+              Share the credentials below securely with the new user.
             </p>
-            <label style={{ ...commonStyles.label(theme), fontSize: '12px', fontWeight: 700, marginBottom: 4 }}>Username</label>
+            <label style={{ ...commonStyles.label(theme), fontSize: '12px', fontWeight: 700, marginBottom: 4 }}>Email</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: theme.inputBg, border: `1px solid ${theme.border}`, borderRadius: 8, padding: '10px 14px', color: theme.text, fontSize: 15, marginBottom: 16 }}>
-              {generatedUsername}
+              {generatedEmail}
             </div>
-            <label style={{ ...commonStyles.label(theme), fontSize: '12px', fontWeight: 700, marginBottom: 4 }}>Generated Password</label>
+            <label style={{ ...commonStyles.label(theme), fontSize: '12px', fontWeight: 700, marginBottom: 4 }}>Temporary Password</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: theme.inputBg, border: `1px solid ${theme.border}`, borderRadius: 8, padding: '10px 14px', fontFamily: 'monospace', fontSize: 15, color: theme.text, letterSpacing: 1, marginBottom: 12 }}>
               <span style={{ flex: 1 }}>{showPwText ? generatedPassword : '•'.repeat(generatedPassword.length)}</span>
               <button type="button" onClick={() => setShowPwText(v => !v)} style={{ border: 0, background: 'transparent', color: theme.muted, cursor: 'pointer', padding: 0, fontSize: 18, lineHeight: 1 }}>
@@ -1389,10 +1426,10 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
               }} style={{ ...commonStyles.button(theme, 'primary', 'sm'), whiteSpace: 'nowrap' }}>Copy</button>
             </div>
             <p style={{ fontSize: '11px', color: theme.amber, margin: '0 0 20px', display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span>⚠</span> This password will not be shown again. The user must change it on first login.
+              <span>⚠</span> The user must sign in using the email address above and will be required to change the password on first login.
             </p>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => { setShowPasswordModal(false); setGeneratedPassword(''); setGeneratedUsername(''); setShowPwText(false); }} style={commonStyles.button(theme, 'primary')}>Done</button>
+              <button type="button" onClick={() => { setShowPasswordModal(false); setGeneratedPassword(''); setGeneratedEmail(''); setShowPwText(false); }} style={commonStyles.button(theme, 'primary')}>Done</button>
             </div>
           </div>
         </div>

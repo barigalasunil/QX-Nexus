@@ -80,7 +80,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     try {
       const { data, error } = await AuthService.signIn(email, password);
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
       if (!data.session?.user) {
         throw new Error('Unable to start a Supabase session.');
       }

@@ -8,6 +8,7 @@ import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, User } from '@/types';
 import { StatCard, FilterBar } from '@/components/common/Shared';
 import { Megaphone, FileText } from 'lucide-react';
+import { UserService } from '@/services/user.service';
 import { RecentActivityWidget } from '@/components/activity/RecentActivityWidget';
 
 interface DashboardProps {
@@ -17,7 +18,7 @@ interface DashboardProps {
   onNavigate?: (tab: string) => void;
 }
 
-export function Dashboard({ currentUser, appState, theme, onNavigate }: DashboardProps) {
+function DashboardInner({ currentUser, appState, theme, onNavigate }: DashboardProps) {
   const [capacityCollapsed, setCapacityCollapsed] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState({
     projectId: currentUser.role === 'superadmin' ? '' : (currentUser.projectId || ''),
@@ -67,11 +68,11 @@ export function Dashboard({ currentUser, appState, theme, onNavigate }: Dashboar
   }, [appState.squads, currentUser.role, currentUser.squadId, effectiveProjectId]);
 
   const dashboardMembers = useMemo(() => {
-    return appState.users
+    return UserService.getUsersSync()
       .filter(user => !effectiveProjectId || user.projectId === effectiveProjectId)
       .filter(user => !effectiveSquadId || user.squadId === effectiveSquadId)
       .sort((a, b) => a.username.localeCompare(b.username));
-  }, [appState.users, effectiveProjectId, effectiveSquadId]);
+  }, [effectiveProjectId, effectiveSquadId]);
 
   useEffect(() => {
     if (!filters.memberId) return;
@@ -253,7 +254,7 @@ export function Dashboard({ currentUser, appState, theme, onNavigate }: Dashboar
         return squad.projectId === currentUser.projectId;
       })
       .map(squad => {
-      const members = appState.users
+      const members = UserService.getUsersSync()
         .filter(user => user.squadId === squad.id)
         .filter(user => !effectiveMemberId || user.id === effectiveMemberId);
       return {
@@ -266,7 +267,7 @@ export function Dashboard({ currentUser, appState, theme, onNavigate }: Dashboar
         }),
       };
     }).filter(item => item.members.length);
-  }, [appState.squads, appState.timesheetEntries, appState.users, currentUser]);
+  }, [appState.squads, appState.timesheetEntries, currentUser]);
 
   const renderCapacity = () => {
     const todayLabel = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -702,3 +703,5 @@ export function Dashboard({ currentUser, appState, theme, onNavigate }: Dashboar
     </div>
   );
 }
+
+export const Dashboard = React.memo(DashboardInner);

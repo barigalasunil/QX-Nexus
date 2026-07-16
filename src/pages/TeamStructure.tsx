@@ -7,6 +7,10 @@ import React, { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Search } from 'lucide-react';
 import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, User } from '@/types';
+import { UserService } from '@/services/user.service';
+import { useUsers } from '@/hooks/useUsers';
+import { useReferenceData } from '@/hooks/useReferenceData';
+import { useSquads } from '@/hooks/useSquads';
 
 interface TeamStructureProps {
   currentUser: User;
@@ -33,16 +37,26 @@ const roleLabel: Record<User['role'], string> = {
 export function TeamStructure({ currentUser, appState, theme }: TeamStructureProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
-  const projectMap = useMemo(() => new Map(appState.projects.map(project => [project.id, project.name])), [appState.projects]);
-  const squadMap = useMemo(() => new Map(appState.squads.map(squad => [squad.id, squad.name])), [appState.squads]);
+  const { projects } = useReferenceData();
+  const { squads } = useSquads();
+  const projectMap = useMemo(() => new Map(projects.map(p => [p.id, p.project_name])), [projects]);
+  const squadMap = useMemo(() => new Map(squads.map(s => [s.id, s.squad_name])), [squads]);
   const today = new Date().toISOString().slice(0, 10);
 
+  const allUsers = useUsers();
   const scopedUsers = useMemo(() => {
-    if (currentUser.role === 'superadmin') return appState.users;
-    if (currentUser.role === 'admin' || currentUser.role === 'guest') return appState.users.filter(user => user.projectId === currentUser.projectId || user.id === currentUser.id || user.role === 'superadmin');
-    if (currentUser.role === 'lead') return appState.users.filter(user => user.id === currentUser.id || user.reportsTo === currentUser.id || (currentUser.directReports || []).includes(user.id));
+    console.log("TeamStructure users:", allUsers.length);
+    if (currentUser.role === 'superadmin') return allUsers;
+    // If admin/guest has no projectId (legacy), show all non-superadmin users
+    if (!currentUser.projectId) {
+      return allUsers.filter(u => u.role !== 'superadmin');
+    }
+    if (currentUser.role === 'admin' || currentUser.role === 'guest') return allUsers.filter(user => user.projectId === currentUser.projectId || user.id === currentUser.id || user.role === 'superadmin');
+    if (currentUser.role === 'lead') return allUsers.filter(user => user.id === currentUser.id || user.reportsTo === currentUser.id || (currentUser.directReports || []).includes(user.id));
     return [];
-  }, [appState.users, currentUser]);
+  }, [allUsers, currentUser]);
+
+  console.log("TeamStructure after filter:", scopedUsers.length);
 
   const scopedIds = new Set(scopedUsers.map(user => user.id));
   const childrenFor = (userId: string) => {
@@ -82,7 +96,7 @@ export function TeamStructure({ currentUser, appState, theme }: TeamStructurePro
     const isCollapsed = collapsed.has(user.id);
     const status = statusFor(user);
     const match = matches(user);
-    const manager = appState.users.find(item => item.id === user.reportsTo);
+    const manager = UserService.getUsersSync().find(item => item.id === user.reportsTo);
     const reportsToText = user.role === 'admin' ? '' : ` | Reports to ${manager?.username || 'nobody'}`;
     const tooltip = `${user.username} | ${user.role} | ${squadMap.get(user.squadId || '') || 'No squad'} | ${projectMap.get(user.projectId || '') || 'All projects'}${reportsToText} | ${children.length} direct reports`;
     return (
