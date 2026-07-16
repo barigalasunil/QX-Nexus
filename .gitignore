@@ -1,8 +1,11 @@
 node_modules/
-build/
 dist/
 coverage/
 .DS_Store
 *.log
-.env*
+.env
+.env.local
+.env.production
+.env.development
+.vscode/settings.json
 !.env.example

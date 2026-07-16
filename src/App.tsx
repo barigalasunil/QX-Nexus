@@ -8,42 +8,44 @@
 // Browser dialogs break the UI experience and cannot be styled.
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { getTheme, commonStyles } from './theme';
-import { AppState, AuditLogEntry, User } from './types';
-import { formatTime, generateId, getEffectivePermissions, getPermissionsForRole, hashPassword, isPasswordHash, scopeAppStateForUser } from './utils';
+import { getTheme, commonStyles } from '@/styles/theme';
+import { AppState, AuditLogEntry, User } from '@/types';
+import { formatTime, getEffectivePermissions, scopeAppStateForUser } from '@/utils';
 
-const APP_NAME = "QA Pulse";
-import { Sidebar } from './components/Sidebar';
-import { Dashboard } from './components/Dashboard';
-import { DataEntry } from './components/DataEntry';
-import { Defects } from './components/Defects';
-import { Releases } from './components/Releases';
-import { Timesheet } from './components/Timesheet';
-import { TeamStructure } from './components/TeamStructure';
-import { Export } from './components/Export';
-import { Settings } from './components/Settings';
-import { Announcements } from './components/Announcements';
-import { LeaveRequests } from './components/LeaveRequests';
-import { BackupRestore } from './components/BackupRestore';
-import { BulkImport } from './components/BulkImport';
-import { Home } from './components/Home';
-import { Toast } from './components/Shared';
+const APP_NAME = "QX Nexus";
+import { Sidebar } from '@/components/layout/Sidebar';
+import { Dashboard } from '@/pages/Dashboard';
+import { DataEntry } from '@/pages/DataEntry';
+import { Defects } from '@/pages/Defects';
+import { Releases } from '@/pages/Releases';
+import { Timesheet } from '@/pages/Timesheet';
+import { TeamStructure } from '@/pages/TeamStructure';
+import { Export } from '@/pages/Export';
+import { Settings } from '@/pages/Settings';
+import { Announcements } from '@/pages/Announcements';
+import { LeaveRequests } from '@/pages/LeaveRequests';
+import { BackupRestore } from '@/components/common/BackupRestore';
+import { BulkImport } from '@/components/users/BulkImport';
+import { Home } from '@/pages/Home';
+import { Toast } from '@/components/common/Shared';
+import { NotificationCenter } from '@/components/notifications/NotificationCenter';
+import { NotificationService } from '@/services/NotificationService';
+import { AppStateService } from '@/services/appState.service';
+import { AuthService } from '@/services/auth.service';
+import { useAuth } from '@/context/AuthContext';
 import { Bell, HelpCircle, UserCheck, X } from 'lucide-react';
-
-const STORE_KEY = 'qa-hub-v4:store';
-const THEME_KEY = 'qa-hub-v4:theme';
-const SESSION_TOKEN_KEY = 'qa-hub-v4:session-token';
-const SESSION_USER_KEY = 'qa-hub-v4:session-user-id';
 
 const INITIAL_APP_STATE: AppState = {
   users: [
     {
       id: 'superadmin',
+      employeeId: null,
       username: 'superadmin',
       email: '',
       password: 'e34f92a20532a873cb3184398070b4b82a8fa29cf48572c203dc5f0fa6158231',
       role: 'superadmin',
       squadId: null,
+      accessibleSquads: [],
       projectId: null,
       permissions: {
         dashboard: 'edit',
@@ -92,17 +94,17 @@ const INITIAL_APP_STATE: AppState = {
 };
 
 export default function App() {
+  const { user: authUser, loading: authLoading, login, logout } = useAuth();
+
   // Theme settings (defaults to Dark mode for modern look)
   const [isDark, setIsDark] = useState<boolean>(() => {
-    const saved = localStorage.getItem(THEME_KEY) || localStorage.getItem('qa-hub-theme');
-    return saved ? saved === 'dark' : window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
+    return AppStateService.loadThemePreference(window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true);
   });
 
   const theme = getTheme(isDark);
 
   useEffect(() => {
-    localStorage.setItem(THEME_KEY, isDark ? 'dark' : 'light');
-    localStorage.removeItem('qa-hub-theme');
+    AppStateService.saveThemePreference(isDark);
   }, [isDark]);
 
   // Collapsible left navigation panel state
@@ -111,254 +113,31 @@ export default function App() {
   // Active view layout state
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
 
-  // Application database state synced to localStorage under "qa-hub-v4"
-  const [appState, setAppState] = useState<AppState>(() => {
-    const saved = localStorage.getItem(STORE_KEY) || localStorage.getItem('qa-hub-v4');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
+  // Application database state loaded through the app-state service.
+  const [appState, setAppState] = useState<AppState>(() => AppStateService.loadAppState(INITIAL_APP_STATE));
 
-        // Migration: Convert existing admin user to superadmin
-        parsed.users = (parsed.users || []).map((u: any) => {
-          if (u.id === 'admin' && u.role === 'admin') {
-            return {
-              ...u,
-              id: 'superadmin',
-              role: 'superadmin',
-              projectId: null,
-              squadId: null,
-              permissions: {
-                dashboard: 'edit',
-                dataEntry: 'edit',
-                defects: 'edit',
-                releases: 'edit',
-                timesheet: 'edit',
-                export: 'edit',
-                settings: 'edit',
-              },
-            };
-          }
-          return u;
-        });
-
-        // Ensure superadmin user exists (migrated or fresh)
-        if (!parsed.users || parsed.users.length === 0) {
-          parsed.users = [...INITIAL_APP_STATE.users];
-        } else if (!parsed.users.some((u: any) => u.id === 'superadmin')) {
-          parsed.users.unshift(INITIAL_APP_STATE.users[0]);
-        }
-
-        // Migration to back-fill permissions and email
-        parsed.users = parsed.users.map((u: any) => {
-          const role = u.role === 'superadmin' ? 'superadmin' : u.role;
-          return {
-            ...u,
-            email: u.email ?? '',
-            projectId: role === 'superadmin' ? null : (u.projectId ?? null),
-            squadId: role === 'superadmin' || role === 'admin' ? null : (u.squadId ?? null),
-            permissions: role === 'superadmin'
-              ? getPermissionsForRole('superadmin')
-              : (u.permissions || getPermissionsForRole(role)),
-            createdBy: u.createdBy ?? null,
-            createdByRole: u.createdByRole ?? null,
-            mustChangePassword: u.mustChangePassword ?? false,
-            loginCount: u.loginCount ?? 0,
-            failedLoginAttempts: u.failedLoginAttempts ?? 0,
-            lockedUntil: u.lockedUntil ?? null,
-            passwordChangedAt: u.passwordChangedAt ?? new Date().toISOString(),
-            loginHistory: u.loginHistory ?? [],
-            reportsTo: u.reportsTo ?? (role === 'superadmin' ? null : u.createdBy ?? null),
-            directReports: u.directReports ?? [],
-            birthday: u.birthday ?? null,
-            loginCountWithoutBirthday: u.loginCountWithoutBirthday ?? 0,
-            jobTitle: u.jobTitle ?? '',
-            baseOffice: u.baseOffice === 'Mumbai' ? 'Mumbai' : 'Bengaluru',
-            notifications: (u.notifications || []).map((notification: any) => ({
-              id: notification.id || crypto.randomUUID?.() || Math.random().toString(36).slice(2),
-              message: notification.message || 'Notification',
-              type: ['info', 'warning', 'success', 'alert'].includes(notification.type) ? notification.type : 'info',
-              read: notification.read ?? false,
-              createdAt: notification.createdAt || new Date().toISOString(),
-              link: notification.link,
-            })),
-          };
-        });
-        const directMap = new Map<string, Set<string>>();
-        parsed.users.forEach((u: any) => {
-          if (u.reportsTo) {
-            const set = directMap.get(u.reportsTo) || new Set<string>();
-            set.add(u.id);
-            directMap.set(u.reportsTo, set);
-          }
-        });
-        parsed.users = parsed.users.map((u: any) => ({
-          ...u,
-          directReports: Array.from(new Set([...(u.directReports || []), ...(directMap.get(u.id) ? Array.from(directMap.get(u.id)!) : [])])),
-        }));
-
-        parsed.squads = (parsed.squads || []).map((s: any) => ({
-          ...s,
-          projectId: s.projectId ?? (parsed.projects?.length === 1 ? parsed.projects[0].id : null),
-        }));
-        parsed.dataEntries = (parsed.dataEntries || []).map((entry: any) => ({
-          ...entry,
-          tcExecuted: entry.tcExecuted ?? null,
-          tcPassed: entry.tcPassed ?? null,
-          tcFailed: entry.tcFailed ?? null,
-          storyPoints: entry.storyPoints ?? null,
-          lastEditedBy: entry.lastEditedBy ?? null,
-          lastEditedAt: entry.lastEditedAt ?? null,
-          lastEditedByRole: entry.lastEditedByRole ?? null,
-          storyStatus: entry.storyStatus ?? 'In Progress',
-          sprintId: entry.sprintId ?? '',
-          sprintName: entry.sprintName ?? '',
-        }));
-        parsed.defects = (parsed.defects || []).map((defect: any) => ({
-          ...defect,
-          jiraCreatedDate: defect.jiraCreatedDate ?? defect.date ?? null,
-          resolvedDate: defect.resolvedDate ?? ((defect.status === 'Resolved' || defect.status === 'Closed') ? defect.date : null),
-          statusHistory: defect.statusHistory ?? [{ status: defect.status, changedBy: defect.addedByName || 'Unknown', changedAt: defect.date ? `${defect.date}T00:00:00.000Z` : new Date().toISOString() }],
-          sprintId: defect.sprintId ?? '',
-          sprintName: defect.sprintName ?? '',
-        }));
-        parsed.timesheetEntries = (parsed.timesheetEntries || []).map((entry: any) => ({
-          ...entry,
-          workingDays: (entry.workingDays || []).map((day: any) => {
-            const date = new Date(`${day.date}T00:00:00`);
-            const isWeekendDay = date.getDay() === 0 || date.getDay() === 6;
-            return {
-              ...day,
-              dayName: day.dayName || date.toLocaleDateString('en-GB', { weekday: 'short' }),
-              isWeekendDay: day.isWeekendDay ?? isWeekendDay,
-              isStatusSet: day.isStatusSet ?? true,
-              isNightDeployment: day.isNightDeployment ?? day.isNightShift ?? false,
-              isWeekendSupport: day.isWeekendSupport ?? false,
-              workLocation: day.workLocation ?? null,
-              locationAudit: day.locationAudit ?? null,
-              lastModifiedBy: day.lastModifiedBy ?? null,
-              lastModifiedByRole: day.lastModifiedByRole ?? null,
-              lastModifiedAt: day.lastModifiedAt ?? null,
-              isAdminAdjustment: day.isAdminAdjustment ?? false,
-            };
-          }),
-        }));
-        parsed.releaseEntries = (parsed.releaseEntries || []).map((entry: any) => ({
-          ...entry,
-          createdAt: entry.createdAt || `${entry.releaseDate || new Date().toISOString().slice(0, 10)}T00:00:00.000Z`,
-          totalStoryPoints: entry.totalStoryPoints ?? null,
-          uatStoryPoints: entry.uatStoryPoints ?? null,
-          lastEditedBy: entry.lastEditedBy ?? null,
-          lastEditedAt: entry.lastEditedAt ?? null,
-        }));
-        if (!parsed.releaseNames) {
-          parsed.releaseNames = [];
-        }
-        if (!parsed.sprints) {
-          parsed.sprints = [];
-        }
-        parsed.projects = parsed.projects || [];
-        parsed.squads = parsed.squads || [];
-        parsed.releases = parsed.releases || [];
-        parsed.dataEntries = parsed.dataEntries || [];
-        parsed.defects = parsed.defects || [];
-        parsed.releaseEntries = parsed.releaseEntries || [];
-        parsed.timesheetEntries = parsed.timesheetEntries || [];
-        parsed.sprints = parsed.sprints || [];
-        parsed.customFields = parsed.customFields || [];
-        parsed.auditLog = parsed.auditLog || [];
-        parsed.notifications = (parsed.notifications || []).map((notification: any) => ({
-          ...notification,
-          id: notification.id || crypto.randomUUID?.() || Math.random().toString(36).slice(2),
-          message: notification.message || 'Notification',
-          read: notification.read ?? false,
-          createdAt: notification.createdAt || new Date().toISOString(),
-          type: notification.type || 'system',
-        }));
-        parsed.announcements = (parsed.announcements || []).map((a: any) => ({
-          id: a.id || generateId(),
-          title: a.title || 'Announcement',
-          message: a.message || '',
-          type: ['info', 'warning', 'success', 'alert'].includes(a.type) ? a.type : 'info',
-          postedBy: a.postedBy || 'Unknown',
-          postedByName: a.postedByName || 'Unknown',
-          postedAt: a.postedAt || new Date().toISOString(),
-          expiresAt: a.expiresAt || null,
-          targetRoles: a.targetRoles || ['superadmin', 'admin', 'lead', 'member', 'guest'],
-          projectId: a.projectId ?? null,
-        }));
-        parsed.leaveRequests = (parsed.leaveRequests || []).map((lr: any) => ({
-          id: lr.id || generateId(),
-          userId: lr.userId || '',
-          userName: lr.userName || '',
-          startDate: lr.startDate || '',
-          endDate: lr.endDate || '',
-          type: ['Annual', 'Sick', 'Personal', 'Other'].includes(lr.type) ? lr.type : 'Annual',
-          reason: lr.reason || '',
-          status: ['pending', 'approved', 'rejected'].includes(lr.status) ? lr.status : 'pending',
-          approverId: lr.approverId ?? null,
-          approverName: lr.approverName ?? null,
-          approvedAt: lr.approvedAt ?? null,
-          createdAt: lr.createdAt || new Date().toISOString(),
-          reviewedBy: lr.reviewedBy ?? null,
-          rejectionReason: lr.rejectionReason ?? null,
-        }));
-        parsed.recognitions = (parsed.recognitions || []).map((r: any) => ({
-          id: r.id || generateId(),
-          fromUserId: r.fromUserId || '',
-          fromUsername: r.fromUsername || '',
-          toUserId: r.toUserId || '',
-          toUsername: r.toUsername || '',
-          toSquad: r.toSquad || '',
-          toProject: r.toProject || '',
-          message: r.message || '',
-          emoji: ['🌟', '🏆', '💪', '🎯', '🔥', '👏', '🚀', '💡'].includes(r.emoji) ? r.emoji : '🌟',
-          projectId: r.projectId || '',
-          createdAt: r.createdAt || new Date().toISOString(),
-        }));
-        parsed.backupMetadata = (parsed.backupMetadata || []).map((bm: any) => ({
-          id: bm.id || generateId(),
-          filename: bm.filename || 'backup.json',
-          createdAt: bm.createdAt || new Date().toISOString(),
-          version: bm.version || '4.0',
-          size: bm.size || 0,
-          createdBy: bm.createdBy || 'Unknown',
-        }));
-        parsed.holidays = (parsed.holidays || []).map((holiday: any) => ({
-          ...holiday,
-          year: holiday.year ?? Number(String(holiday.date || '').slice(0, 4)),
-          createdBy: holiday.createdBy ?? 'Unknown',
-          createdAt: holiday.createdAt ?? new Date().toISOString(),
-        }));
-        return parsed;
-      } catch (e) {
-        // fallback to initial
-      }
-    }
-    return INITIAL_APP_STATE;
-  });
-
+  const previousNotificationStateRef = React.useRef<AppState | null>(null);
   const [migrationReady, setMigrationReady] = useState(false);
   useEffect(() => {
-    let cancelled = false;
-    const migratePasswords = async () => {
-      const users = await Promise.all(appState.users.map(async user => ({
-        ...user,
-        password: isPasswordHash(user.password) ? user.password : await hashPassword(user.password || ''),
-      })));
-      if (cancelled) return;
-      const migratedState = { ...appState, users };
-      localStorage.setItem(STORE_KEY, JSON.stringify(migratedState));
-      localStorage.removeItem('qa-hub-v4');
-      setAppState(migratedState);
-      setMigrationReady(true);
-    };
-    migratePasswords();
-    return () => { cancelled = true; };
+    AppStateService.saveAppState(appState, { clearLegacy: true });
+    setMigrationReady(true);
   }, []);
 
   useEffect(() => {
     if (migrationReady) {
-      localStorage.setItem(STORE_KEY, JSON.stringify(appState));
+      AppStateService.saveAppState(appState);
+    }
+  }, [appState, migrationReady]);
+
+  useEffect(() => {
+    if (!migrationReady) return;
+    const previous = previousNotificationStateRef.current;
+    previousNotificationStateRef.current = appState;
+    if (!previous) return;
+    const withNotifications = NotificationService.applyDetectedNotifications(previous, appState);
+    if (withNotifications !== appState) {
+      previousNotificationStateRef.current = withNotifications;
+      setAppState(withNotifications);
     }
   }, [appState, migrationReady]);
 
@@ -400,17 +179,19 @@ export default function App() {
   useEffect(() => {
     if (document.querySelector('meta[http-equiv="Content-Security-Policy"]')) return;
     const meta = document.createElement('meta');
+    const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
+    const connectSources = ["'self'", supabaseUrl].filter(Boolean).join(' ');
     meta.httpEquiv = 'Content-Security-Policy';
-    meta.content = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline';";
+    meta.content = `default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; connect-src ${connectSources};`;
     document.head.appendChild(meta);
   }, []);
 
   useEffect(() => {
     const showRuntimeError = (message: string) => {
-      const existing = document.getElementById('qa-hub-runtime-error');
+      const existing = document.getElementById('qx-nexus-runtime-error');
       if (existing) existing.remove();
       const panel = document.createElement('div');
-      panel.id = 'qa-hub-runtime-error';
+      panel.id = 'qx-nexus-runtime-error';
       panel.style.cssText = [
         'position:fixed',
         'inset:16px',
@@ -438,23 +219,21 @@ export default function App() {
   }, [theme.muted, theme.red, theme.surface, theme.text]);
 
   useEffect(() => {
-    if (!migrationReady) return;
-    const token = sessionStorage.getItem(SESSION_TOKEN_KEY);
-    const userId = sessionStorage.getItem(SESSION_USER_KEY);
-    if (token && userId) {
-      const user = appState.users.find(item => item.id === userId);
-      if (user) {
-        setCurrentUser(user);
-        setProfileName(user.username);
-        setProfileTitle(user.jobTitle || '');
-        setLoggedInSince(new Date().toISOString());
-        if (user.mustChangePassword) setPasswordModal('forced');
-      }
+    if (!migrationReady || authLoading) return;
+    if (authUser) {
+      setCurrentUser(authUser);
+      setProfileName(authUser.username);
+      setProfileTitle(authUser.jobTitle || '');
+      setLoggedInSince(current => current || new Date().toISOString());
+      return;
     }
-  }, [migrationReady]);
+    setCurrentUser(null);
+    setPasswordModal(null);
+  }, [authLoading, authUser, migrationReady]);
 
   // Keep currentUser state in sync with any updates in appState.users (e.g. permissions, username)
   useEffect(() => {
+    if (authUser) return;
     if (currentUser) {
       const latestUser = appState.users.find((u) => u.id === currentUser.id);
       if (latestUser) {
@@ -465,7 +244,7 @@ export default function App() {
         }
       }
     }
-  }, [appState.users, currentUser]);
+  }, [appState.users, authUser, currentUser]);
 
   // Toast Alerts Notification state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning'; duration?: number; exiting?: boolean } | null>(null);
@@ -486,9 +265,9 @@ export default function App() {
   }, [toast]);
 
   useEffect(() => {
-    if (document.getElementById('qa-hub-animations')) return;
+    if (document.getElementById('qx-nexus-animations')) return;
     const style = document.createElement('style');
-    style.id = 'qa-hub-animations';
+    style.id = 'qx-nexus-animations';
     style.textContent = `
       @keyframes pageEnter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
       @keyframes rowFlash { 0% { background-color: rgba(245,158,11,0.3); } 100% { background-color: transparent; } }
@@ -512,8 +291,8 @@ export default function App() {
     document.head.appendChild(style);
   }, []);
 
-  // Login form inputs
-  const [loginUsername, setLoginUsername] = useState('');
+  // Login form inputs. Email is the authentication credential; username remains display-only.
+  const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
 
   const getFirstAccessibleTab = (user: User): string => {
@@ -522,70 +301,28 @@ export default function App() {
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const uname = loginUsername.trim().toLowerCase();
-    const candidate = appState.users.find((u) => u.username.toLowerCase() === uname);
-    if (!candidate) {
-      showToast('Incorrect username or password.', 'error');
+    const email = loginEmail.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showToast('Please enter a valid email address.', 'error');
       return;
     }
-
-    if (candidate.lockedUntil && Date.now() < candidate.lockedUntil) {
-      const minutes = Math.ceil((candidate.lockedUntil - Date.now()) / 60000);
-      showToast(`Account locked. Try again at ${formatTime(new Date(candidate.lockedUntil).toISOString())} (${minutes} minute${minutes === 1 ? '' : 's'}).`, 'error');
-      return;
-    }
-
-    const enteredHash = await hashPassword(loginPassword.trim());
-    if (candidate.password === enteredHash) {
-      const birthdayNull = !candidate.birthday;
-      const updatedUser: User = {
-        ...candidate,
-        loginCount: candidate.loginCount + 1,
-        loginCountWithoutBirthday: birthdayNull ? (candidate.loginCountWithoutBirthday || 0) + 1 : candidate.loginCountWithoutBirthday,
-        failedLoginAttempts: 0,
-        lockedUntil: null,
-        loginHistory: [{ timestamp: new Date().toISOString(), sessionId: crypto.randomUUID?.() || Math.random().toString(36).slice(2) }, ...(candidate.loginHistory || [])].slice(0, 5),
-      };
-      setAppState(prev => ({ ...prev, users: prev.users.map(user => user.id === updatedUser.id ? updatedUser : user) }));
-      sessionStorage.setItem(SESSION_TOKEN_KEY, crypto.randomUUID?.() || Math.random().toString(36).slice(2));
-      sessionStorage.setItem(SESSION_USER_KEY, updatedUser.id);
-      setCurrentUser(updatedUser);
-      setProfileName(updatedUser.username);
-      setProfileTitle(updatedUser.jobTitle || '');
+    try {
+      const profile = await login(email, loginPassword);
+      setCurrentUser(profile);
+      setProfileName(profile.username);
+      setProfileTitle(profile.jobTitle || '');
       setLoggedInSince(new Date().toISOString());
       setSessionExpired(false);
-      const passwordAgeDays = updatedUser.passwordChangedAt
-        ? (Date.now() - new Date(updatedUser.passwordChangedAt).getTime()) / 86400000
-        : 31;
-      const showPwModal = updatedUser.mustChangePassword || (!updatedUser.mustChangePassword && passwordAgeDays > 30);
-      setPasswordModal(showPwModal ? 'forced' : null);
-      // Birthday prompt: show after password modal if applicable
-      const shouldShowBirthdayPrompt = birthdayNull && (updatedUser.loginCountWithoutBirthday || 0) <= 2;
-      if (showPwModal) {
-        // birthday will be shown after password modal closes
-        setPendingBirthdayPrompt(shouldShowBirthdayPrompt);
-      } else {
-        setShowBirthdayPrompt(shouldShowBirthdayPrompt);
-      }
-      // land page: dynamically choose the first accessible tab
-      const targetTab = getFirstAccessibleTab(updatedUser);
-      setCurrentTab(targetTab);
-      showToast(`Welcome back, ${updatedUser.username}!`, 'success');
-      setLoginUsername('');
+      setPasswordModal(null);
+      setPendingBirthdayPrompt(false);
+      setShowBirthdayPrompt(!profile.birthday && (profile.loginCountWithoutBirthday || 0) <= 2);
+      setCurrentTab(getFirstAccessibleTab(profile));
+      showToast(`Welcome back, ${profile.username}!`, 'success');
+      setLoginEmail('');
       setLoginPassword('');
-      appendAudit('LOGIN', 'User signed in.', updatedUser);
-    } else {
-      const attempts = (candidate.failedLoginAttempts || 0) + 1;
-      const lockedUntil = attempts >= 5 ? Date.now() + 15 * 60 * 1000 : null;
-      setAppState(prev => ({
-        ...prev,
-        users: prev.users.map(user => user.id === candidate.id
-          ? { ...user, failedLoginAttempts: attempts >= 5 ? 0 : attempts, lockedUntil }
-          : user),
-      }));
-      showToast(lockedUntil
-        ? 'Account locked due to too many failed attempts. Try again in 15 minutes.'
-        : 'Incorrect username or password.', 'error');
+      appendAudit('LOGIN', 'User signed in.', profile);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Unable to sign in. Please try again.', 'error');
     }
   };
 
@@ -616,13 +353,17 @@ export default function App() {
     setBirthdayMonth('');
   };
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
     appendAudit('LOGOUT', 'User signed out.');
-    sessionStorage.clear();
-    setCurrentUser(null);
-    setPasswordModal(null);
-    showToast('Signed out successfully.', 'success');
-  }, [appendAudit, showToast]);
+    try {
+      await logout();
+      setCurrentUser(null);
+      setPasswordModal(null);
+      showToast('Signed out successfully.', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Unable to sign out. Please try again.', 'error');
+    }
+  }, [appendAudit, logout, showToast]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -634,10 +375,11 @@ export default function App() {
       clearTimeout(logoutTimer);
       lockTimer = setTimeout(() => setIdleLocked(true), 10 * 60 * 1000);
       logoutTimer = setTimeout(() => {
-        sessionStorage.clear();
-        setCurrentUser(null);
-        setPasswordModal(null);
-        setSessionExpired(true);
+        logout().finally(() => {
+          setCurrentUser(null);
+          setPasswordModal(null);
+          setSessionExpired(true);
+        });
       }, 30 * 60 * 1000);
     };
     const events = ['mousemove', 'mousedown', 'keypress', 'touchstart', 'scroll'];
@@ -648,7 +390,7 @@ export default function App() {
       clearTimeout(logoutTimer);
       events.forEach(event => window.removeEventListener(event, reset));
     };
-  }, [currentUser?.id, idleLocked]);
+  }, [currentUser?.id, idleLocked, logout]);
 
   const validateNewPassword = useCallback((value: string, confirmation: string) => {
     if (!value) return 'New password is required.';
@@ -668,14 +410,19 @@ export default function App() {
       return;
     }
     if (passwordModal === 'periodic') {
-      const currentHash = await hashPassword(passwordForm.current);
-      if (currentHash !== currentUser.password) {
+      try {
+        await login(currentUser.email, passwordForm.current);
+      } catch (error) {
         setPasswordError('Current password is incorrect.');
         return;
       }
     }
-    const password = await hashPassword(passwordForm.next);
-    const updated = { ...currentUser, password, mustChangePassword: false, passwordChangedAt: new Date().toISOString() };
+    const { error } = await AuthService.updatePassword(passwordForm.next);
+    if (error) {
+      setPasswordError(error.message || 'Unable to update password.');
+      return;
+    }
+    const updated = { ...currentUser, mustChangePassword: false, passwordChangedAt: new Date().toISOString() };
     setAppState(prev => ({ ...prev, users: prev.users.map(user => user.id === updated.id ? updated : user) }));
     setCurrentUser(updated);
     setPasswordForm({ current: '', next: '', confirm: '' });
@@ -688,13 +435,15 @@ export default function App() {
   const handleUnlock = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!currentUser) return;
-    const enteredHash = await hashPassword(unlockPassword.trim());
-    if (enteredHash === currentUser.password) {
+    try {
+      await login(currentUser.email, unlockPassword.trim());
       setIdleLocked(false);
       setUnlockPassword('');
       setUnlockError('');
       setAppState(previous => ({ ...previous, users: previous.users.map(user => user.id === currentUser.id ? { ...user, failedLoginAttempts: 0 } : user) }));
       return;
+    } catch (error) {
+      // Keep the existing retry/auto-logout behavior while delegating credential checks to Supabase Auth.
     }
     const attempts = (currentUser.failedLoginAttempts || 0) + 1;
     if (attempts >= 5) {
@@ -755,7 +504,7 @@ export default function App() {
     if (tabId === 'home') return true;
     if (tabId === 'profile') return true;
     if (tabId === 'teamStructure') return currentUser.role !== 'member';
-    if (tabId === 'announcements') return currentUser.role === 'superadmin' || currentUser.role === 'admin';
+    if (tabId === 'announcements') return currentUser.role === 'admin';
     if (tabId === 'leaveRequests') return currentUser.role !== 'guest';
 
     const permKey = keyMap[tabId];
@@ -765,24 +514,7 @@ export default function App() {
 
   useEffect(() => {
     if (!currentUser) return;
-    const daysToExpiry = currentUser.passwordChangedAt ? 30 - Math.floor((Date.now() - new Date(currentUser.passwordChangedAt).getTime()) / 86400000) : 0;
-    if (daysToExpiry !== 3) return;
-    setAppState(previous => (previous.users.find(user => user.id === currentUser.id)?.notifications || []).some(n => n.message.includes('password expires in 3 days'))
-      ? previous
-      : {
-        ...previous,
-        users: previous.users.map(user => user.id === currentUser.id ? {
-          ...user,
-          notifications: [{
-            id: crypto.randomUUID?.() || Math.random().toString(36).slice(2),
-            message: 'Your password expires in 3 days. Please update it.',
-            read: false,
-            createdAt: new Date().toISOString(),
-            type: 'warning' as const,
-            link: 'profile',
-          }, ...(user.notifications || [])].slice(0, 50),
-        } : user),
-      });
+    setAppState(previous => NotificationService.passwordExpiryReminder(previous, currentUser));
   }, [currentUser?.id, currentUser?.passwordChangedAt]);
 
   useEffect(() => {
@@ -866,7 +598,7 @@ export default function App() {
             >
               Q
             </div>
-            <h1 style={{ fontSize: '24px', fontWeight: 700, margin: '0 0 4px 0', tracking: '-0.025em' }}>
+            <h1 style={{ fontSize: '24px', fontWeight: 700, margin: '0 0 4px 0' }}>
               {APP_NAME}
             </h1>
             <p style={{ margin: 0, fontSize: '14px', color: theme.muted }}>
@@ -887,12 +619,12 @@ export default function App() {
               </div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <label style={commonStyles.label(theme)}>Username</label>
+              <label style={commonStyles.label(theme)}>Email</label>
               <input
-                type="text"
-                placeholder="Username"
-                value={loginUsername}
-                onChange={(e) => setLoginUsername(e.target.value)}
+                type="email"
+                placeholder="Email"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
                 required
                 style={commonStyles.input(theme)}
               />
@@ -935,49 +667,22 @@ export default function App() {
 
   const activeTabValidated = canAccessTab(currentTab) ? currentTab : getFirstAccessibleTab(currentUser);
   const userPerms = getEffectivePermissions(currentUser);
-  const legacyNotifications = (appState.notifications || []).filter(item => item.userId === currentUser.id);
-  const allUserNotifications = [
-    ...(Array.isArray(currentUser.notifications) ? currentUser.notifications : []),
-    ...legacyNotifications.map(item => ({
-      id: item.id,
-      message: item.message,
-      type: item.type === 'defect' ? 'alert' as const : item.type === 'password' ? 'warning' as const : 'info' as const,
-      read: item.read,
-      createdAt: item.createdAt,
-      link: undefined,
-    })),
-  ]
-    .map(notification => ({
-      ...notification,
-      id: notification.id || crypto.randomUUID?.() || Math.random().toString(36).slice(2),
-      message: notification.message || 'Notification',
-      read: notification.read ?? false,
-      createdAt: notification.createdAt || new Date().toISOString(),
-    }))
-    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
-    .slice(0, 50);
+  const liveCurrentUser = appState.users.find(user => user.id === currentUser.id) || currentUser;
+  const allUserNotifications = NotificationService.getForUser(appState, liveCurrentUser.id);
   const unreadNotifications = allUserNotifications.filter(item => !item.read);
 
   const markNotificationsRead = () => {
-    setAppState(previous => ({
-      ...previous,
-      users: previous.users.map(user => user.id === currentUser.id
-        ? { ...user, notifications: (user.notifications || []).map(notification => ({ ...notification, read: true })) }
-        : user),
-      notifications: (previous.notifications || []).map(notification => notification.userId === currentUser.id ? { ...notification, read: true } : notification),
-    }));
+    setAppState(previous => NotificationService.markAllRead(previous, liveCurrentUser.id));
   };
 
   const markNotificationRead = (id: string, link?: string) => {
-    setAppState(previous => ({
-      ...previous,
-      users: previous.users.map(user => user.id === currentUser.id
-        ? { ...user, notifications: (user.notifications || []).map(notification => notification.id === id ? { ...notification, read: true } : notification) }
-        : user),
-      notifications: (previous.notifications || []).map(notification => notification.id === id ? { ...notification, read: true } : notification),
-    }));
+    setAppState(previous => NotificationService.markRead(previous, liveCurrentUser.id, id));
     if (link) setCurrentTab(link);
     setNotificationsOpen(false);
+  };
+
+  const deleteNotification = (id: string) => {
+    setAppState(previous => NotificationService.delete(previous, liveCurrentUser.id, id));
   };
 
   const saveProfileName = () => {
@@ -1262,18 +967,15 @@ export default function App() {
               {unreadNotifications.length > 0 && <span style={{ position: 'absolute', top: '-5px', right: '-5px', minWidth: '16px', height: '16px', borderRadius: '999px', backgroundColor: theme.red, color: '#fff', fontSize: '10px', display: 'grid', placeItems: 'center', padding: '0 4px' }}>{unreadNotifications.length}</span>}
             </button>}
             {currentUser.role !== 'guest' && notificationsOpen && (
-              <div style={{ position: 'absolute', right: 0, top: '34px', width: '320px', maxHeight: '420px', overflowY: 'auto', backgroundColor: theme.surface, border: `1px solid ${theme.border}`, borderRadius: '8px', boxShadow: '0 18px 42px rgba(0,0,0,0.22)', zIndex: 80 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', borderBottom: `1px solid ${theme.border}` }}>
-                  <strong style={{ color: theme.text }}>Notifications</strong>
-                  <button type="button" onClick={markNotificationsRead} style={{ border: 0, background: 'transparent', color: theme.blue, fontSize: '11px', cursor: 'pointer' }}>Mark all as read</button>
-                </div>
-                {allUserNotifications.length ? allUserNotifications.map(notification => (
-                  <button key={notification.id} type="button" onClick={() => markNotificationRead(notification.id, notification.link)} style={{ width: '100%', textAlign: 'left', border: 0, background: notification.read ? theme.inputBg : theme.surface, padding: '10px', borderLeft: `3px solid ${notification.read ? 'transparent' : theme.blue}`, borderBottom: `1px solid ${theme.border}`, color: notification.read ? theme.muted : theme.text, cursor: 'pointer' }}>
-                    <div style={{ fontSize: '12px', fontWeight: notification.read ? 500 : 800 }}>{notification.message}</div>
-                    <div style={{ fontSize: '10px', marginTop: '4px' }}>{new Date(notification.createdAt).toLocaleString()}</div>
-                  </button>
-                )) : <div style={{ padding: '18px', color: theme.muted, fontSize: '12px' }}>No notifications.</div>}
-              </div>
+              <NotificationCenter
+                notifications={allUserNotifications}
+                theme={theme}
+                onClose={() => setNotificationsOpen(false)}
+                onMarkRead={(id) => markNotificationRead(id)}
+                onMarkAllRead={markNotificationsRead}
+                onDelete={deleteNotification}
+                onOpenLink={(notification) => markNotificationRead(notification.id, notification.link)}
+              />
             )}
           </div>
         </header>
