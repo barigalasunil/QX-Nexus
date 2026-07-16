@@ -4,6 +4,7 @@ import { AppState, User, DataEntry, Defect, Holiday, AuditLogEntry } from '@/typ
 import { generateId, hashPassword, sanitise } from '@/utils';
 import { HolidayRepository } from '@/repositories/holiday';
 import { Upload, FileSpreadsheet, AlertTriangle, Check, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { UserService } from '@/services/user.service';
 
 interface BulkImportProps {
   currentUser: User;
@@ -559,9 +560,9 @@ export function BulkImport({ currentUser, appState, setAppState, showToast, them
           await Promise.all(userPromises);
 
           if (newUsers.length > 0) {
+            await UserService.refresh();
             setAppState(prev => ({
               ...prev,
-              users: [...prev.users, ...newUsers],
               auditLog: [{
                 id: generateId(),
                 timestamp: new Date().toISOString(),

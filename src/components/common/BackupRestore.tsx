@@ -101,8 +101,8 @@ export function BackupRestore({ currentUser, appState, setAppState, showToast, t
       const text = await file.text();
       const data = JSON.parse(text);
 
-      if (!data.users || !Array.isArray(data.users)) {
-        showToast('Invalid backup file: missing users array.', 'error');
+      if (!data.projects || !Array.isArray(data.projects)) {
+        showToast('Invalid backup file: missing projects array.', 'error');
         return;
       }
 

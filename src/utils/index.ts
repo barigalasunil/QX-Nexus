@@ -5,6 +5,7 @@
 
 import * as XLSX from 'xlsx';
 import { AppState, User, UserPermissions } from '@/types';
+import { UserService } from '@/services/user.service';
 
 export const DEFAULT_PERMISSIONS = {
   superadmin: {
@@ -92,6 +93,7 @@ export const getEffectivePermissions = (user: User): UserPermissions => {
 export const scopeAppStateForUser = (state: AppState, user: User): AppState => {
   if (user.role === 'superadmin') return state;
 
+  const allUsers = UserService.getUsersSync();
   const projectId = user.projectId;
   const squadId = user.squadId;
   const accessibleSquadIds = new Set(
@@ -99,7 +101,7 @@ export const scopeAppStateForUser = (state: AppState, user: User): AppState => {
       .filter(squad => (user.accessibleSquads || []).includes(squad.name) || (user.accessibleSquads || []).includes(squad.id) || squad.id === squadId)
       .map(squad => squad.id)
   );
-  const projectUsers = state.users.filter((u) => {
+  const projectUsers = allUsers.filter((u) => {
     if (u.id === user.id) return true;
     if (u.projectId !== projectId) return false;
     if (user.role === 'admin' || user.role === 'guest') return true;
@@ -117,7 +119,6 @@ export const scopeAppStateForUser = (state: AppState, user: User): AppState => {
 
   return {
     ...state,
-    users: projectUsers,
     projects: state.projects.filter((p) => p.id === projectId),
     squads: state.squads.filter((s) => s.projectId === projectId && (
       user.role === 'admin' || accessibleSquadIds.has(s.id)

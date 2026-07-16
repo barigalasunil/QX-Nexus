@@ -287,7 +287,7 @@ export interface Recognition {
 }
 
 export interface AppState {
-  users: User[];
+  userNotifications: Record<string, UserNotification[]>;
   projects: Project[];
   squads: Squad[];
   releases: Release[];

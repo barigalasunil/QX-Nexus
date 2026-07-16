@@ -4,11 +4,12 @@
  */
 
 // App state service for loading, migrating, and saving persisted QX Nexus data.
-// It obtains its repository through RepositoryFactory so the storage backend
-// can change without touching UI components or business workflows.
+// Users are now managed entirely through Supabase via UserService.
+// AppState no longer contains a `users` array; notifications are stored separately
+// in `userNotifications` keyed by user ID.
 
 import { AppState } from '@/types';
-import { generateId, getPermissionsForRole } from '@/utils';
+import { generateId } from '@/utils';
 import { RepositoryFactory } from '@/repositories/RepositoryFactory';
 
 type SaveOptions = {
@@ -31,93 +32,53 @@ export const AppStateService = {
       try {
         const parsed = JSON.parse(saved);
 
-        // Migration: Convert existing admin user to superadmin.
-        parsed.users = (parsed.users || []).map((u: any) => {
-          if (u.id === 'admin' && u.role === 'admin') {
-            return {
-              ...u,
-              id: 'superadmin',
-              role: 'superadmin',
-              projectId: null,
-              squadId: null,
-              permissions: {
-                dashboard: 'edit',
-                dataEntry: 'edit',
-                defects: 'edit',
-                releases: 'edit',
-                timesheet: 'edit',
-                export: 'edit',
-                settings: 'edit',
-              },
-            };
+        // Migration: Extract notifications from legacy users array into userNotifications map.
+        if (Array.isArray(parsed.users) && !parsed.userNotifications) {
+          const notifMap: Record<string, any[]> = {};
+          for (const u of parsed.users) {
+            if (Array.isArray(u.notifications) && u.notifications.length > 0) {
+              notifMap[u.id] = u.notifications.map((n: any) => ({
+                id: n.id || crypto.randomUUID?.() || Math.random().toString(36).slice(2),
+                title: n.title,
+                message: n.message || 'Notification',
+                type: ['info', 'warning', 'success', 'alert'].includes(n.type) ? n.type : 'info',
+                category: n.category || 'system',
+                priority: n.priority || 'normal',
+                read: n.read ?? false,
+                createdAt: n.createdAt || new Date().toISOString(),
+                link: n.link,
+                actionLabel: n.actionLabel,
+                dedupeKey: n.dedupeKey,
+              }));
+            }
           }
-          return u;
-        });
-
-        // Ensure superadmin user exists for migrated or fresh stores.
-        if (!parsed.users || parsed.users.length === 0) {
-          parsed.users = [...initialState.users];
-        } else if (!parsed.users.some((u: any) => u.id === 'superadmin')) {
-          parsed.users.unshift(initialState.users[0]);
+          parsed.userNotifications = notifMap;
         }
 
-        // Back-fill user permissions and profile fields introduced over time.
-        parsed.users = parsed.users.map((u: any) => {
-          const role = u.role === 'superadmin' ? 'superadmin' : u.role;
-          return {
-            ...u,
-            employeeId: u.employeeId ?? u.employee_id ?? null,
-            email: u.email ?? '',
-            projectId: role === 'superadmin' ? null : (u.projectId ?? null),
-            squadId: role === 'superadmin' || role === 'admin' ? null : (u.squadId ?? null),
-            accessibleSquads: Array.isArray(u.accessibleSquads)
-              ? u.accessibleSquads
-              : (u.squadId ? [parsed.squads?.find((s: any) => s.id === u.squadId)?.name || u.squadId] : []),
-            permissions: role === 'superadmin'
-              ? getPermissionsForRole('superadmin')
-              : (u.permissions || getPermissionsForRole(role)),
-            createdBy: u.createdBy ?? null,
-            createdByRole: u.createdByRole ?? null,
-            mustChangePassword: u.mustChangePassword ?? false,
-            loginCount: u.loginCount ?? 0,
-            failedLoginAttempts: u.failedLoginAttempts ?? 0,
-            lockedUntil: u.lockedUntil ?? null,
-            passwordChangedAt: u.passwordChangedAt ?? new Date().toISOString(),
-            loginHistory: u.loginHistory ?? [],
-            reportsTo: u.reportsTo ?? (role === 'superadmin' ? null : u.createdBy ?? null),
-            directReports: u.directReports ?? [],
-            birthday: u.birthday ?? null,
-            loginCountWithoutBirthday: u.loginCountWithoutBirthday ?? 0,
-            jobTitle: u.jobTitle ?? '',
-            baseOffice: u.baseOffice === 'Mumbai' ? 'Mumbai' : 'Bengaluru',
-            notifications: (u.notifications || []).map((notification: any) => ({
-              id: notification.id || crypto.randomUUID?.() || Math.random().toString(36).slice(2),
-              title: notification.title,
-              message: notification.message || 'Notification',
-              type: ['info', 'warning', 'success', 'alert'].includes(notification.type) ? notification.type : 'info',
-              category: notification.category || 'system',
-              priority: notification.priority || 'normal',
-              read: notification.read ?? false,
-              createdAt: notification.createdAt || new Date().toISOString(),
-              link: notification.link,
-              actionLabel: notification.actionLabel,
-              dedupeKey: notification.dedupeKey,
-            })),
-          };
-        });
+        // Ensure userNotifications exists.
+        parsed.userNotifications = parsed.userNotifications || {};
 
-        const directMap = new Map<string, Set<string>>();
-        parsed.users.forEach((u: any) => {
-          if (u.reportsTo) {
-            const set = directMap.get(u.reportsTo) || new Set<string>();
-            set.add(u.id);
-            directMap.set(u.reportsTo, set);
+        // Migrate legacy notifications (state.notifications) into userNotifications.
+        if (Array.isArray(parsed.notifications) && parsed.notifications.length > 0) {
+          for (const entry of parsed.notifications) {
+            const userId = entry.userId;
+            if (!userId) continue;
+            const existing = parsed.userNotifications[userId] || [];
+            if (!existing.some((n: any) => n.id === entry.id)) {
+              parsed.userNotifications[userId] = [
+                {
+                  id: entry.id || generateId(),
+                  message: entry.message || 'Notification',
+                  read: entry.read ?? false,
+                  createdAt: entry.createdAt || new Date().toISOString(),
+                  type: entry.type === 'defect' ? 'alert' : entry.type === 'password' ? 'warning' : 'info',
+                  category: entry.type === 'defect' ? 'defect' : entry.type === 'password' ? 'password' : 'system',
+                },
+                ...existing,
+              ];
+            }
           }
-        });
-        parsed.users = parsed.users.map((u: any) => ({
-          ...u,
-          directReports: Array.from(new Set([...(u.directReports || []), ...(directMap.get(u.id) ? Array.from(directMap.get(u.id)!) : [])])),
-        }));
+        }
 
         parsed.squads = (parsed.squads || []).map((s: any) => ({
           ...s,
@@ -252,6 +213,10 @@ export const AppStateService = {
           createdBy: holiday.createdBy ?? 'Unknown',
           createdAt: holiday.createdAt ?? new Date().toISOString(),
         }));
+
+        // Remove legacy users array if present.
+        delete parsed.users;
+
         return parsed;
       } catch (e) {
         // Fall through to the built-in initial state if persisted data is invalid.

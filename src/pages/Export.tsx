@@ -8,6 +8,7 @@ import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, User, WorkingDay } from '@/types';
 import { exportToCSV, exportToExcel, formatDate, generateId } from '@/utils';
 import { BarChart3, Bug, CalendarDays, CheckCircle2, Clock, Download, FileSpreadsheet, FileText, Loader2, Rocket, Settings, XCircle } from 'lucide-react';
+import { UserService } from '@/services/user.service';
 
 interface ExportProps {
   currentUser: User;
@@ -220,10 +221,10 @@ export function Export({ currentUser, appState, theme, showToast }: ExportProps)
       squadId: release.squadId,
     })), [appState.releaseEntries, filters, projectMap, squadMap]);
 
-  const timesheetUsers = useMemo(() => appState.users
+  const timesheetUsers = useMemo(() => UserService.getUsersSync()
     .filter(user => !filters.employeeId || user.id === filters.employeeId)
     .filter(user => !filters.squadId || user.squadId === filters.squadId)
-    .sort((a, b) => a.username.localeCompare(b.username)), [appState.users, filters.employeeId, filters.squadId]);
+    .sort((a, b) => a.username.localeCompare(b.username)), [filters.employeeId, filters.squadId]);
 
   const timesheetSummary = useMemo(() => timesheetUsers.map(user => {
     const month = `${filters.year}-${String(filters.month || now.getMonth() + 1).padStart(2, '0')}`;
@@ -525,7 +526,7 @@ export function Export({ currentUser, appState, theme, showToast }: ExportProps)
         <CompactSelect label="Month" value={filters.month} onChange={value => setFilter('month', value)} options={MONTHS.map((month, index) => ({ value: String(index + 1), label: month }))} all="All Months" />
         {showPriority && <CompactSelect label="Priority" value={filters.priority} onChange={value => setFilter('priority', value)} options={['P1', 'P2', 'P3'].map(value => ({ value, label: value }))} all="All Priorities" />}
         {showPriority && <CompactSelect label="SIT Miss" value={filters.sitMiss} onChange={value => setFilter('sitMiss', value)} options={[{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }]} all="All SIT" />}
-        {showEmployee && <CompactSelect label="Employee" value={filters.employeeId} onChange={value => setFilter('employeeId', value)} options={appState.users.map(user => ({ value: user.id, label: user.username }))} all="All Employees" />}
+        {showEmployee && <CompactSelect label="Employee" value={filters.employeeId} onChange={value => setFilter('employeeId', value)} options={UserService.getUsersSync().map(user => ({ value: user.id, label: user.username }))} all="All Employees" />}
         <button type="button" onClick={triggerLoading} style={commonStyles.button(theme, 'primary', 'sm')}>{loading && <Loader2 size={13} className="spin" />}Apply</button>
         <button type="button" onClick={resetFilters} style={{ border: 0, background: 'transparent', color: theme.blue, cursor: 'pointer', fontWeight: 800, fontSize: '12px' }}>Reset</button>
         {activeFilterCount > 0 && <span style={pill(theme)}>{activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} active</span>}

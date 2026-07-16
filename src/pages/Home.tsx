@@ -1,8 +1,9 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, User, Recognition } from '@/types';
 import { getGreeting, getRelativeTime, getCurrentWeekRange, getNext14DaysRange, generateId } from '@/utils';
 import { Plus, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { UserService } from '@/services/user.service';
 
 interface HomeProps {
   currentUser: User;
@@ -54,6 +55,7 @@ function computeLocationStats(timesheetEntries: AppState['timesheetEntries'], us
 }
 
 function CompactLocationCard({ location, count, target, color, C }: { location: string; count: number; target: number; color: string; C: ThemeTokens }) {
+  console.count("CompactLocationCard");
   const pct = Math.min(Math.round(count / target * 100), 100);
   const remaining = Math.max(target - count, 0);
   const onTrack = pct >= 75;
@@ -272,8 +274,8 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
   // ---- Birthdays ----
   const { birthdays, isOwnBirthdayToday } = useMemo(() => {
     const projUsers = currentUser.role === 'superadmin'
-      ? appState.users
-      : appState.users.filter(u => u.projectId === currentUser.projectId);
+      ? UserService.getUsersSync()
+      : UserService.getUsersSync().filter(u => u.projectId === currentUser.projectId);
     const allBdays = projUsers.filter(u => u.birthday && isBirthdayInRange(u.birthday, rangeStart, rangeEnd));
     const withDates = allBdays.map(u => ({
       user: u,
@@ -282,7 +284,7 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
     const ownBday = currentUser.birthday && isBirthdayInRange(currentUser.birthday, rangeStart, rangeEnd) &&
       getBirthdayDateInRange(currentUser.birthday, rangeStart, rangeEnd)?.toISOString().slice(0, 10) === todayStr;
     return { birthdays: withDates.slice(0, 5), isOwnBirthdayToday: !!ownBday, total: allBdays.length };
-  }, [appState.users, currentUser, rangeStart, rangeEnd, todayStr]);
+  }, [currentUser, rangeStart, rangeEnd, todayStr]);
 
   // ---- Holidays ----
   const upcomingHolidays = useMemo(() => {
@@ -303,9 +305,9 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
   const recentRecognitions = projectRecognitions.slice(0, 5);
 
   const teamMembers = useMemo(() => {
-    if (currentUser.role === 'superadmin') return appState.users.filter(u => u.id !== currentUser.id);
-    return appState.users.filter(u => u.projectId === currentUser.projectId && u.id !== currentUser.id);
-  }, [appState.users, currentUser]);
+    if (currentUser.role === 'superadmin') return UserService.getUsersSync().filter(u => u.id !== currentUser.id);
+    return UserService.getUsersSync().filter(u => u.projectId === currentUser.projectId && u.id !== currentUser.id);
+  }, [currentUser]);
 
   const handleGiveRecognition = () => {
     const errors: Record<string, string> = {};
@@ -319,7 +321,7 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
     setRecogErrors(errors);
     if (Object.keys(errors).length) return;
 
-    const recipient = appState.users.find(u => u.id === recogTo);
+    const recipient = UserService.getUsersSync().find(u => u.id === recogTo);
     if (!recipient) return;
 
     const recognition: Recognition = {
@@ -339,9 +341,9 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
     setAppState(prev => ({
       ...prev,
       recognitions: [recognition, ...prev.recognitions],
-      users: prev.users.map(u => u.id === recipient.id ? {
-        ...u,
-        notifications: [
+      userNotifications: {
+        ...prev.userNotifications,
+        [recipient.id]: [
           {
             id: generateId(),
             message: `${currentUser.username} recognised you: ${msg.slice(0, 60)}${msg.length > 60 ? '...' : ''}`,
@@ -350,9 +352,9 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
             createdAt: new Date().toISOString(),
             link: 'home',
           },
-          ...(u.notifications || []),
+          ...(prev.userNotifications[recipient.id] || []),
         ].slice(0, 50),
-      } : u),
+      },
     }));
 
     showToast(`Recognition sent to ${recipient.username}! 🌟`, 'success');
@@ -643,12 +645,12 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
                 );
               })}
               {birthdays.length < (() => {
-                const projUsers = currentUser.role === 'superadmin' ? appState.users : appState.users.filter(u => u.projectId === currentUser.projectId);
+                const projUsers = currentUser.role === 'superadmin' ? UserService.getUsersSync() : UserService.getUsersSync().filter(u => u.projectId === currentUser.projectId);
                 return projUsers.filter(u => u.birthday && isBirthdayInRange(u.birthday, rangeStart, rangeEnd)).length;
               })() && (
                 <div style={{ color: theme.muted, fontSize: '11px', marginTop: '4px' }}>
                   +{(() => {
-                    const projUsers = currentUser.role === 'superadmin' ? appState.users : appState.users.filter(u => u.projectId === currentUser.projectId);
+                    const projUsers = currentUser.role === 'superadmin' ? UserService.getUsersSync() : UserService.getUsersSync().filter(u => u.projectId === currentUser.projectId);
                     return projUsers.filter(u => u.birthday && isBirthdayInRange(u.birthday, rangeStart, rangeEnd)).length - birthdays.length;
                   })()} more this month
                 </div>

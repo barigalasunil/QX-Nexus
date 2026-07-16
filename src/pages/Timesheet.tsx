@@ -7,6 +7,7 @@ import { generateId } from '@/utils';
 import { StatCard, ViewOnlyBanner } from '@/components/common/Shared';
 import { TimesheetRepository } from '@/repositories/timesheet';
 import { HolidayList } from '@/components/timesheets/HolidayList';
+import { UserService } from '@/services/user.service';
 
 const USER_COLORS = ['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444', '#06b6d4', '#f97316', '#84cc16'];
 const LOCATION_OPTIONS = ['WFH', 'VIL-Pune', 'VIL-BLR', 'VIL-MUM', 'QX-BLR'];
@@ -160,17 +161,17 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
       const updatedStore: AppState = {
         ...cur,
         timesheetEntries: entries,
-        users: editingOther ? cur.users.map(user => user.id === targetId ? {
-          ...user,
-          notifications: [{
+        userNotifications: editingOther ? {
+          ...cur.userNotifications,
+          [targetId]: [{
             id: generateId(),
             message: `${currentUser.username} adjusted your timesheet for ${key}.`,
             read: false,
             createdAt: modifiedAt,
             type: 'info' as const,
             link: 'timesheet',
-          }, ...(user.notifications || [])].slice(0, 50),
-        } : user) : cur.users,
+          }, ...(cur.userNotifications[targetId] || [])].slice(0, 50),
+        } : cur.userNotifications,
         auditLog: [{
           id: generateId(),
           timestamp: modifiedAt,
@@ -263,7 +264,7 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
       setTargetName(currentUser.username);
       return;
     }
-    const user = storeRef.current.users.find(u => u.id === userId);
+    const user = UserService.getUsersSync().find(u => u.id === userId);
     if (user) {
       setTargetId(user.id);
       setTargetName(user.username);
@@ -343,9 +344,13 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
             <label style={commonStyles.label(theme)}>Logging for</label>
             <select value={targetId === currentUser.id ? 'self' : targetId} onChange={e => handleLoggingForChange(e.target.value)} style={commonStyles.input(theme)}>
               <option value="self">Myself - {currentUser.username}</option>
-              {appState.users.filter(user => user.id !== currentUser.id).map(user => (
-                <option key={user.id} value={user.id}>{user.username} ({user.role})</option>
-              ))}
+              {(() => {
+                const users = UserService.getUsersSync().filter(user => user.id !== currentUser.id);
+                console.log("Timesheet dropdown users:", users.length);
+                return users.map(user => (
+                  <option key={user.id} value={user.id}>{user.username} ({user.role})</option>
+                ));
+              })()}
             </select>
           </div>
         )}
@@ -820,7 +825,7 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
                     {teamSummaries.length === 0 ? (
                       <tr><td colSpan={9} style={{ ...commonStyles.td(theme), textAlign: 'center', color: theme.muted, padding: 24 }}>No team timesheets logged yet.</td></tr>
                     ) : teamSummaries.map((row, index) => {
-                      const userIndex = Math.max(0, appState.users.findIndex(user => user.id === row.userId));
+                      const userIndex = Math.max(0, UserService.getUsersSync().findIndex(user => user.id === row.userId));
                       const userColor = USER_COLORS[userIndex % USER_COLORS.length];
                       return (
                         <tr key={row.id} style={{ backgroundColor: index % 2 === 1 ? theme.inputBg : 'transparent', borderLeft: `3px solid ${userColor}` }}>
