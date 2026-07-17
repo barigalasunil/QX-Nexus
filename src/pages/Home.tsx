@@ -336,16 +336,6 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
 
   const recentRecognitions = projectRecognitions.slice(0, 5);
 
-  // ---- Active Announcements ----
-  const activeAnnouncements = useMemo(() => {
-    const announcements = appState.announcements || [];
-    return announcements
-      .filter(a => !a.expiresAt || a.expiresAt >= todayStr)
-      .filter(a => a.targetRoles.includes(currentUser.role))
-      .filter(a => !a.projectId || a.projectId === currentUser.projectId || currentUser.role === 'superadmin')
-      .sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime());
-  }, [appState.announcements, currentUser.role, currentUser.projectId, todayStr]);
-
   const teamMembers = useMemo(() => {
     if (currentUser.role === 'superadmin') return UserService.getUsersSync().filter(u => u.id !== currentUser.id);
     return UserService.getUsersSync().filter(u => u.projectId === currentUser.projectId && u.id !== currentUser.id);
