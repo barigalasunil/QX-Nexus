@@ -5,14 +5,13 @@ import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, TimesheetEntry, User, WorkingDay } from '@/types';
 import { generateId, exportToCSV, exportToExcel } from '@/utils';
 import { StatCard, ViewOnlyBanner } from '@/components/common/Shared';
+import { StatusLegend } from '@/components/common/StatusLegend';
+import { getStatusBgColor } from '@/components/common/StatusLegend';
 import { TimesheetRepository } from '@/repositories/timesheet';
 import { HolidayList } from '@/components/timesheets/HolidayList';
 import { UserService } from '@/services/user.service';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Chart, registerables } from 'chart.js';
-
-Chart.register(...registerables);
 
 const USER_COLORS = ['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444', '#06b6d4', '#f97316', '#84cc16'];
 const LOCATION_OPTIONS = ['WFH', 'VIL-Pune', 'VIL-BLR', 'VIL-MUM', 'QX-BLR'];
@@ -42,6 +41,7 @@ const WORKED_ON_WEEKEND_CODE = 'WOW';
 const STATUS_CODE_LABELS: Record<string, string> = {
   'P': 'PRESENT',
   'A': 'ABSENT',
+  'NA': 'NOT APPLICABLE',
   'H': 'PUBLIC HOLIDAY',
   'OH': 'OPTIONAL HOLIDAY',
   'WO': 'WEEKLY OFF',
@@ -75,7 +75,7 @@ function generateMonthDays(year: number, month: number): WorkingDay[] {
 }
 
 function getCellBg(status: WorkingDay['status'], isWeekendDay: boolean, isDark: boolean) {
-  if (!status) return 'transparent';
+  if (!status) return isDark ? '#33415533' : '#e2e8f066';
   if (status === 'Weekend') return isDark ? '#111827' : '#f1f5f9';
   return ({
     'Working': isDark ? '#064e3b' : '#d1fae5',
@@ -91,6 +91,7 @@ function getCodeCellBg(code: string, isDark: boolean) {
   const colorMap: Record<string, string> = {
     'P': isDark ? '#064e3b' : '#d1fae5',
     'A': isDark ? '#7f1d1d' : '#fee2e2',
+    'NA': isDark ? '#334155' : '#e2e8f0',
     'H': isDark ? '#3b1f6e' : '#ede9fe',
     'OH': isDark ? '#3b1f6e' : '#ede9fe',
     'WO': isDark ? '#111827' : '#f1f5f9',
@@ -102,7 +103,7 @@ function getCodeCellBg(code: string, isDark: boolean) {
 }
 
 function getDayCode(day: WorkingDay): string {
-  if (!day.status) return '';
+  if (!day.status) return 'NA';
   if (day.status === 'Weekend') return day.isWeekendSupport ? WORKED_ON_WEEKEND_CODE : 'WO';
   return STATUS_CODE_MAP[day.status] || '';
 }
@@ -432,32 +433,6 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
     );
   }
 
-  // Legend component for status codes
-  function StatusLegend() {
-    const legendItems = [
-      { code: 'P', label: 'PRESENT', color: isDark ? '#064e3b' : '#d1fae5' },
-      { code: 'A', label: 'ABSENT', color: isDark ? '#7f1d1d' : '#fee2e2' },
-      { code: 'H', label: 'PUBLIC HOLIDAY', color: isDark ? '#3b1f6e' : '#ede9fe' },
-      { code: 'OH', label: 'OPTIONAL HOLIDAY', color: isDark ? '#3b1f6e' : '#ede9fe' },
-      { code: 'WO', label: 'WEEKLY OFF', color: isDark ? '#111827' : '#f1f5f9' },
-      { code: 'WOW', label: 'WORKED ON WEEKEND', color: isDark ? '#7f1d1d' : '#fee2e2' },
-      { code: 'HD', label: 'HALF DAY', color: isDark ? '#451a03' : '#fef3c7' },
-      { code: 'CO', label: 'COMP OFF', color: isDark ? '#1e3a5f' : '#dbeafe' },
-    ];
-    return (
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 14px', alignItems: 'center', marginBottom: 12, fontSize: 11, color: theme.muted }}>
-        {legendItems.map(item => (
-          <span key={item.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: item.color, border: `1px solid ${theme.border}` }} />
-            {item.code} — {item.label}
-          </span>
-        ))}
-        <span>🌙 Night Deployment</span>
-        <span style={{ fontWeight: 800 }}>W+ Weekend Support</span>
-      </div>
-    );
-  }
-
   function exportTimesheetPDF() {
     const doc = new jsPDF('landscape', 'mm', 'a4');
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -551,7 +526,7 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
         doc.setDrawColor(borderColor);
         doc.rect(x, y, cellWidth, cellHeight, 'S');
 
-        doc.setTextColor(code === 'WO' || code === 'WOW' ? '#64748b' : textColor);
+        doc.setTextColor(code === 'WO' || code === 'WOW' || code === 'NA' ? '#64748b' : textColor);
         doc.setFont('helvetica', 'bold');
         doc.text(code, x + cellWidth / 2, y + cellHeight / 2 + 1.5, { align: 'center' });
       });
@@ -568,6 +543,7 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
     const legendItems = [
       { code: 'P', label: 'PRESENT' },
       { code: 'A', label: 'ABSENT' },
+      { code: 'NA', label: 'NOT APPLICABLE' },
       { code: 'H', label: 'PUBLIC HOLIDAY' },
       { code: 'OH', label: 'OPTIONAL HOLIDAY' },
       { code: 'WO', label: 'WEEKLY OFF' },
@@ -650,7 +626,7 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
       ...Object.entries(STATUS_CODE_LABELS).map(([code, label]) => [
         { value: code },
         { value: label },
-        { value: code === 'P' ? 'Present (Working or WFH)' : code === 'A' ? 'Absent (Leave)' : code === 'H' ? 'Public Holiday' : code === 'OH' ? 'Optional Holiday' : code === 'WO' ? 'Weekly Off (Weekend)' : code === 'WOW' ? 'Worked on Weekend' : code === 'HD' ? 'Half Day' : code === 'CO' ? 'Comp Off' : '' }
+        { value: code === 'P' ? 'Present (Working or WFH)' : code === 'A' ? 'Absent (Leave)' : code === 'NA' ? 'Not Set / Unset Day' : code === 'H' ? 'Public Holiday' : code === 'OH' ? 'Optional Holiday' : code === 'WO' ? 'Weekly Off (Weekend)' : code === 'WOW' ? 'Worked on Weekend' : code === 'HD' ? 'Half Day' : code === 'CO' ? 'Comp Off' : '' }
       ]),
     ];
 
@@ -696,7 +672,11 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
       [],
       ['Legend'],
       ['Code', 'Label', 'Description'],
-      ...Object.entries(STATUS_CODE_LABELS).map(([code, label]) => [code, label, '']),
+      ...Object.entries(STATUS_CODE_LABELS).map(([code, label]) => [
+        code,
+        label,
+        code === 'P' ? 'Present (Working or WFH)' : code === 'A' ? 'Absent (Leave)' : code === 'NA' ? 'Not Set / Unset Day' : code === 'H' ? 'Public Holiday' : code === 'OH' ? 'Optional Holiday' : code === 'WO' ? 'Weekly Off (Weekend)' : code === 'WOW' ? 'Worked on Weekend' : code === 'HD' ? 'Half Day' : code === 'CO' ? 'Comp Off' : '',
+      ]),
     ];
 
     exportToCSV(rows, `timesheet_${targetName}_${selYear}-${String(selMonth).padStart(2, '0')}`);
@@ -766,6 +746,19 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
                     letterSpacing: '0.3px',
                   }}>
                     {day.status}
+                  </div>
+                )}
+
+                {!day.status && (
+                  <div style={{
+                    fontSize: 9,
+                    color: theme.muted,
+                    marginTop: 2,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.3px',
+                    opacity: 0.5,
+                  }}>
+                    NA
                   </div>
                 )}
 
@@ -1123,7 +1116,7 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
             {targetName}'s Roster for {new Date(selYear, selMonth - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
           </h4>
 
-          <StatusLegend />
+          <StatusLegend isDark={isDark} theme={theme} />
 
           <CalendarGrid />
           {DayPopover()}

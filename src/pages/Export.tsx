@@ -233,7 +233,7 @@ export function Export({ currentUser, appState, theme, showToast }: ExportProps)
   const timesheetSummary = useMemo(() => timesheetUsers.map(user => {
     const month = `${filters.year}-${String(filters.month || now.getMonth() + 1).padStart(2, '0')}`;
     const entry = appState.timesheetEntries.find(item => item.userId === user.id && item.month === month);
-    const counts = { Working: 0, WFH: 0, Leave: 0, Holiday: 0, Training: 0, Night: 0, Weekend: 0 };
+    const counts = { Working: 0, WFH: 0, Leave: 0, Holiday: 0, Night: 0, Weekend: 0 };
     entry?.workingDays.forEach(day => {
       if (day.status && day.status in counts) counts[day.status as keyof typeof counts]++;
       if (day.isNightDeployment) counts.Night++;
@@ -246,7 +246,6 @@ export function Export({ currentUser, appState, theme, showToast }: ExportProps)
       WFH: counts.WFH,
       Leave: counts.Leave,
       Holiday: counts.Holiday,
-      Training: counts.Training,
       Night_Deploy: counts.Night,
       Weekend_Support: counts.Weekend,
     };
