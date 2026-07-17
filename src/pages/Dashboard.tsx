@@ -286,7 +286,7 @@ function DashboardInner({ currentUser, appState, theme, onNavigate }: DashboardP
                   <span>{group.squad.name}</span><span>{collapsed ? '+' : '-'}</span>
                 </button>
                 {!collapsed && <div style={{ display: 'grid', gap: '7px', marginTop: '10px' }}>{group.members.map(({ member, status, location }) => {
-                  const color = status === 'Working' || status === 'WFH' ? '#22c55e' : status === 'Leave' || status === 'Holiday' ? '#ef4444' : status === 'Training' ? '#f59e0b' : '#64748b';
+                  const color = status === 'Working' || status === 'WFH' ? '#22c55e' : status === 'Leave' || status === 'Holiday' ? '#ef4444' : '#64748b';
                   return <div key={member.id} style={{ display: 'grid', gridTemplateColumns: '1fr 92px 70px', gap: '8px', alignItems: 'center', fontSize: '12px' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', fontWeight: 700 }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: color }} />{member.username}</span><span style={{ color: status === 'Not filled' ? theme.muted : theme.text, fontStyle: status === 'Not filled' ? 'italic' : 'normal' }}>{status}</span><span style={{ color: theme.muted }}>{status === 'Working' || status === 'WFH' ? location : '—'}</span></div>;
                 })}</div>}
                 <div style={{ marginTop: '10px', color: theme.muted, fontSize: '11px', fontWeight: 800 }}>{available} available · {leave} on leave · {unknown} unknown</div>
