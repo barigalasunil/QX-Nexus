@@ -159,8 +159,7 @@ export default function App() {
   useEffect(() => {
     if (document.querySelector('meta[http-equiv="Content-Security-Policy"]')) return;
     const meta = document.createElement('meta');
-    const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
-    const connectSources = ["'self'", supabaseUrl].filter(Boolean).join(' ');
+    const connectSources = "'self'";
     meta.httpEquiv = 'Content-Security-Policy';
     meta.content = `default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; connect-src ${connectSources};`;
     document.head.appendChild(meta);

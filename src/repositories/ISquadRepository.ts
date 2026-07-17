@@ -1,4 +1,4 @@
-import { Squad } from "@/types/squad";
+import { Squad } from "@/types";
 
 export interface ISquadRepository {
   fetchSquads(): Promise<Squad[]>;

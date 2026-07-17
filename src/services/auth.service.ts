@@ -3,128 +3,305 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// Authentication service boundary for Supabase Auth.
-// Email is the only authentication credential. Username is mapped from the
-// profile table as a display name and is never sent to Supabase Auth.
+// Local authentication service for localStorage-only mode.
+// Authenticates against seeded local users. Keeps the same public API
+// as the Supabase version so components/hooks don't need changes.
 
-import { Session, User as SupabaseUser } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
 import { User } from '@/types';
+import { LocalStorageUserRepository } from '@/repositories/user/LocalStorageUserRepository';
 import { getPermissionsForRole } from '@/utils';
 
-const normalizeRole = (role: unknown): User['role'] => {
-  const normalized = String(role || 'member').trim().toLowerCase().replace(/[\s_-]+/g, '');
-  if (normalized === 'superadmin') return 'superadmin';
-  if (normalized === 'admin') return 'admin';
-  if (normalized === 'lead') return 'lead';
-  if (normalized === 'guest') return 'guest';
-  return 'member';
-};
+const SESSION_KEY = 'qx-nexus:session';
+const USERS_KEY = 'qx-nexus:users';
+const PASSWORD_PEPPER = 'qx-nexus-local-auth';
 
-/**
- * Map a profiles table row to the application User type.
- *
- * SCHEMA ALIGNMENT (2026-07-14):
- * The live profiles table has only 9 columns:
- *   id, email, full_name, role, employee_id, active, must_change_password, created_at, updated_at
- *
- * Fields like project_id, squad_id, reports_to, etc. are NOT in the database yet.
- * They return null/defaults until the migration is applied.
- */
-const mapProfileToUser = (profile: Record<string, any>, authUser: SupabaseUser): User => {
-  const role = normalizeRole(profile.role);
-  return {
-    id: profile.id || authUser.id,
-    employeeId: profile.employee_id ?? null,
-    username: profile.full_name || authUser.email || 'User',
-    email: profile.email || authUser.email || '',
-    password: undefined,
-    role,
-    // Fields not yet in database - return defaults
-    // After migration, these will be populated from the database
-    projectId: profile.project_id ?? null,
-    squadId: profile.squad_id ?? null,
-    reportsTo: profile.reports_to ?? null,
-    jobTitle: profile.job_title || '',
-    baseOffice: (profile.base_office as User['baseOffice']) || 'Bengaluru',
-    permissions: profile.permissions ?? getPermissionsForRole(role),
-    accessibleSquads: profile.accessible_squads ?? [],
-    directReports: profile.direct_reports ?? [],
-    createdBy: profile.created_by ?? null,
-    createdByRole: profile.created_by_role as User['createdByRole'] ?? null,
-    mustChangePassword: profile.must_change_password === true,
-    loginCount: profile.login_count ?? 0,
-    failedLoginAttempts: profile.failed_login_attempts ?? 0,
-    lockedUntil: profile.locked_until ?? null,
-    passwordChangedAt: profile.password_changed_at ?? new Date().toISOString(),
-    loginHistory: profile.login_history ?? [],
-    birthday: profile.birthday ?? null,
-    loginCountWithoutBirthday: profile.login_count_without_birthday ?? 0,
-    notifications: [],
-  };
-};
+function hashPassword(password: string): string {
+  let hash = 0;
+  const salted = password + PASSWORD_PEPPER;
+  for (let i = 0; i < salted.length; i++) {
+    const char = salted.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0;
+  }
+  return hash.toString(16);
+}
+
+function verifyPassword(password: string, hash: string): boolean {
+  return hashPassword(password) === hash;
+}
+
+function generateSessionToken(): string {
+  return crypto.randomUUID?.() || Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+function getStoredUsers(): User[] {
+  try {
+    const stored = localStorage.getItem(USERS_KEY);
+    if (stored) return JSON.parse(stored);
+  } catch {}
+  return [];
+}
+
+function saveUsers(users: User[]): void {
+  localStorage.setItem(USERS_KEY, JSON.stringify(users));
+}
+
+function getSession(): { token: string; user: User } | null {
+  try {
+    const stored = localStorage.getItem(SESSION_KEY);
+    if (stored) return JSON.parse(stored);
+  } catch {}
+  return null;
+}
+
+function saveSession(token: string, user: User): void {
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ token, user }));
+}
+
+function clearSession(): void {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+function seedUsersIfNeeded(): User[] {
+  let users = getStoredUsers();
+  if (users.length > 0) return users;
+
+  users = [
+    {
+      id: '1',
+      employeeId: 'EMP001',
+      username: 'Super Admin',
+      email: 'admin@qxnexus.local',
+      password: hashPassword('Admin@123'),
+      role: 'superadmin',
+      projectId: null,
+      squadId: null,
+      reportsTo: null,
+      jobTitle: 'Platform Owner',
+      baseOffice: 'Bengaluru',
+      permissions: getPermissionsForRole('superadmin'),
+      accessibleSquads: [],
+      directReports: [],
+      createdBy: null,
+      createdByRole: null,
+      mustChangePassword: false,
+      loginCount: 10,
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+      passwordChangedAt: new Date().toISOString(),
+      loginHistory: [],
+      birthday: '01-01',
+      loginCountWithoutBirthday: 99,
+      notifications: [],
+    },
+    {
+      id: '2',
+      employeeId: 'EMP002',
+      username: 'Admin User',
+      email: 'admin2@qxnexus.local',
+      password: hashPassword('Admin@123'),
+      role: 'admin',
+      projectId: null,
+      squadId: null,
+      reportsTo: '1',
+      jobTitle: 'QA Manager',
+      baseOffice: 'Bengaluru',
+      permissions: getPermissionsForRole('admin'),
+      accessibleSquads: [],
+      directReports: [],
+      createdBy: '1',
+      createdByRole: 'superadmin',
+      mustChangePassword: false,
+      loginCount: 10,
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+      passwordChangedAt: new Date().toISOString(),
+      loginHistory: [],
+      birthday: '01-01',
+      loginCountWithoutBirthday: 99,
+      notifications: [],
+    },
+    {
+      id: '3',
+      employeeId: 'EMP003',
+      username: 'Team Lead',
+      email: 'lead@qxnexus.local',
+      password: hashPassword('Lead@123'),
+      role: 'lead',
+      projectId: null,
+      squadId: null,
+      reportsTo: '2',
+      jobTitle: 'QA Lead',
+      baseOffice: 'Bengaluru',
+      permissions: getPermissionsForRole('lead'),
+      accessibleSquads: [],
+      directReports: [],
+      createdBy: '2',
+      createdByRole: 'admin',
+      mustChangePassword: false,
+      loginCount: 10,
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+      passwordChangedAt: new Date().toISOString(),
+      loginHistory: [],
+      birthday: '01-01',
+      loginCountWithoutBirthday: 99,
+      notifications: [],
+    },
+    {
+      id: '4',
+      employeeId: 'EMP004',
+      username: 'Team Member',
+      email: 'member@qxnexus.local',
+      password: hashPassword('Member@123'),
+      role: 'member',
+      projectId: null,
+      squadId: null,
+      reportsTo: '3',
+      jobTitle: 'QA Engineer',
+      baseOffice: 'Bengaluru',
+      permissions: getPermissionsForRole('member'),
+      accessibleSquads: [],
+      directReports: [],
+      createdBy: '3',
+      createdByRole: 'lead',
+      mustChangePassword: false,
+      loginCount: 10,
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+      passwordChangedAt: new Date().toISOString(),
+      loginHistory: [],
+      birthday: '01-01',
+      loginCountWithoutBirthday: 99,
+      notifications: [],
+    },
+  ];
+
+  saveUsers(users);
+  return users;
+}
 
 export const AuthService = {
   async signIn(email: string, password: string) {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
-
-    if (error) {
-      console.error('Supabase Auth Error:', error);
-      throw error;
+    // TEMP: hardcoded login for local testing, remove before implementing real auth
+    if (email === 'admin@qxnexus.local' && password === 'Admin@123') {
+      const superAdmin: User = {
+        id: '1',
+        employeeId: 'EMP001',
+        username: 'Super Admin',
+        email: 'admin@qxnexus.local',
+        role: 'superadmin',
+        projectId: null,
+        squadId: null,
+        reportsTo: null,
+        jobTitle: 'Platform Owner',
+        baseOffice: 'Bengaluru',
+        permissions: getPermissionsForRole('superadmin'),
+        accessibleSquads: [],
+        directReports: [],
+        createdBy: null,
+        createdByRole: null,
+        mustChangePassword: false,
+        loginCount: 10,
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+        passwordChangedAt: new Date().toISOString(),
+        loginHistory: [],
+        birthday: '01-01',
+        loginCountWithoutBirthday: 99,
+        notifications: [],
+      };
+      const token = generateSessionToken();
+      saveSession(token, superAdmin);
+      return { data: { session: { user: superAdmin, access_token: token } }, error: null };
     }
 
-    return { data, error };
+    seedUsersIfNeeded();
+    const users = getStoredUsers();
+    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase());
+
+    if (!user) {
+      throw new Error('Invalid email or password');
+    }
+
+    if (!verifyPassword(password, user.password || '')) {
+      throw new Error('Invalid email or password');
+    }
+
+    const token = generateSessionToken();
+    const sessionUser = { ...user, password: undefined };
+    saveSession(token, sessionUser);
+
+    return { data: { session: { user: sessionUser, access_token: token } }, error: null };
   },
 
   async signOut() {
-    return supabase.auth.signOut();
+    clearSession();
+    return { error: null };
   },
 
-  // Password updates are delegated to Supabase Auth so local app data never
-  // becomes a credential source.
   async updatePassword(password: string) {
-    return supabase.auth.updateUser({ password });
+    const session = getSession();
+    if (!session) throw new Error('No active session');
+
+    const users = getStoredUsers();
+    const index = users.findIndex(u => u.id === session.user.id);
+    if (index === -1) throw new Error('User not found');
+
+    users[index] = {
+      ...users[index],
+      password: hashPassword(password),
+      mustChangePassword: false,
+      passwordChangedAt: new Date().toISOString(),
+    };
+    saveUsers(users);
+
+    const updatedUser = { ...users[index], password: undefined };
+    saveSession(session.token, updatedUser);
+
+    return { error: null as Error | null };
   },
 
-  async getSession(): Promise<Session | null> {
-    const { data, error } = await supabase.auth.getSession();
-    if (error) throw error;
-    return data.session;
+  async getSession() {
+    const session = getSession();
+    return session ? { data: { session: { user: session.user, access_token: session.token } }, error: null } : { data: { session: null }, error: null };
   },
 
   async getCurrentUser(): Promise<User | null> {
-    const { data, error } = await supabase.auth.getUser();
-    if (error) throw error;
-    if (!data.user) return null;
-    return AuthService.loadProfile(data.user);
+    const session = getSession();
+    if (!session?.user) return null;
+
+    const users = getStoredUsers();
+    const user = users.find(u => u.id === session.user.id);
+    return user ? { ...user, password: undefined } : null;
   },
 
-  onAuthStateChange(callback: (session: Session | null) => void) {
-    return supabase.auth.onAuthStateChange((_event, session) => callback(session));
-  },
-
-  async loadProfile(authUser: SupabaseUser): Promise<User> {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', authUser.id)
-      .maybeSingle();
-
-    if (error) {
-      console.error('Profile load error:', error);
-      throw error;
+  onAuthStateChange(callback: (session: { user: User | null; access_token: string } | null) => void) {
+    const session = getSession();
+    if (session) {
+      callback({ user: session.user, access_token: session.token });
+    } else {
+      callback(null);
     }
 
-    if (!data) {
-      console.error('No profile row found for auth user ID:', authUser.id);
+    return {
+      data: {
+        subscription: {
+          unsubscribe: () => {},
+        },
+      },
+    };
+  },
+
+  async loadProfile(authUser: { id: string; email?: string }): Promise<User> {
+    seedUsersIfNeeded();
+    const users = getStoredUsers();
+    const user = users.find(u => u.id === authUser.id || u.email?.toLowerCase() === authUser.email?.toLowerCase());
+
+    if (!user) {
       throw new Error('No profile was found for your account. Please contact an administrator.');
     }
 
-    const user = mapProfileToUser(data, authUser);
-
-    return user;
+    return { ...user, password: undefined };
   },
 };
