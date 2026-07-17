@@ -41,6 +41,7 @@ export interface User {
   jobTitle?: string;
   baseOffice?: 'Bengaluru' | 'Mumbai';
   notifications?: UserNotification[];
+  importantDates?: { id: string; label: string; date: string }[]; // "MM-DD" format, user-named (e.g. Work Anniversary)
 }
 
 export interface Project {

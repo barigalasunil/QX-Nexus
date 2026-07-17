@@ -65,6 +65,7 @@ function getDefaultUsers(): User[] {
       createdBy: null,
       createdByRole: null,
       notifications: [],
+      importantDates: [],
     },
     {
       id: '2',
@@ -92,6 +93,7 @@ function getDefaultUsers(): User[] {
       createdBy: '1',
       createdByRole: 'superadmin',
       notifications: [],
+      importantDates: [],
     },
     {
       id: '3',
@@ -119,6 +121,7 @@ function getDefaultUsers(): User[] {
       createdBy: '2',
       createdByRole: 'admin',
       notifications: [],
+      importantDates: [],
     },
     {
       id: '4',
@@ -146,6 +149,7 @@ function getDefaultUsers(): User[] {
       createdBy: '3',
       createdByRole: 'lead',
       notifications: [],
+      importantDates: [],
     },
   ];
 }
