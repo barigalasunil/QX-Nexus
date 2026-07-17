@@ -4,7 +4,7 @@
  */
 
 // App state service for loading, migrating, and saving persisted QX Nexus data.
-// Users are now managed entirely through Supabase via UserService.
+// Users are managed entirely through localStorage via UserService.
 // AppState no longer contains a `users` array; notifications are stored separately
 // in `userNotifications` keyed by user ID.
 

@@ -185,11 +185,11 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
   const { projects } = useReferenceData();
   const { squads } = useSquads();
 
-  // Lookup maps (from Supabase via ReferenceDataContext & useSquads)
+  // Lookup maps (from localStorage via ReferenceDataContext & useSquads)
   const projectMap = useMemo(() => new Map(projects.map(p => [p.id, p.project_name])), [projects]);
   const squadMap = useMemo(() => new Map(squads.map(s => [s.id, s.squad_name])), [squads]);
 
-  // Project/Squad dropdown values (from Supabase)
+  // Project/Squad dropdown values (from localStorage)
   const projectOptions = useMemo(() => {
     return projects.map(p => ({ value: p.id, label: p.project_name }));
   }, [projects]);

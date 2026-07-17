@@ -12,6 +12,50 @@ QX Nexus is a React-based single-page application designed for QA organisations 
 
 ---
 
+## Backend Status
+
+**This app currently runs on localStorage only.** A real backend (Supabase/PostgreSQL or otherwise) needs to be implemented against the following repository interfaces in `src/repositories/` and types in `src/types/`:
+
+### Repository Interfaces to Implement
+
+| Interface | File | Purpose |
+|-----------|------|---------|
+| `IAppStateRepository` | `src/repositories/IAppStateRepository.ts` | App state (projects, squads, releases, data entries, defects, timesheets, holidays, audit log, etc.) |
+| `IUserRepository` | `src/repositories/user/IUserRepository.ts` | User CRUD, auth, permissions, reporting manager, promote/demote |
+| `IProjectRepository` | `src/repositories/IProjectRepository.ts` | Project CRUD, code/name uniqueness |
+| `ISquadRepository` | `src/repositories/ISquadRepository.ts` | Squad CRUD, code/name uniqueness per project |
+| `IDataEntryRepository` | `src/repositories/dataEntry/IDataEntryRepository.ts` | Data entry CRUD, filtering by project/squad/sprint |
+| `IDefectRepository` | `src/repositories/defect/IDefectRepository.ts` | Defect CRUD with status history |
+| `IReleaseRepository` | `src/repositories/release/IReleaseRepository.ts` | Release CRUD |
+| `IReleaseEntryRepository` | `src/repositories/releaseEntry/IReleaseEntryRepository.ts` | Release calendar entries |
+| `ITimesheetRepository` | `src/repositories/timesheet/ITimesheetRepository.ts` | Timesheet CRUD with working days |
+| `IHolidayRepository` | `src/repositories/holiday/IHolidayRepository.ts` | Holiday CRUD |
+| `ILeaveRepository` | `src/repositories/leave/ILeaveRepository.ts` | Leave request workflow |
+| `IAnnouncementRepository` | `src/repositories/announcement/IAnnouncementRepository.ts` | Announcement CRUD |
+| `INotificationRepository` | `src/repositories/notification/INotificationRepository.ts` | In-app notifications |
+| `IRecognitionRepository` | `src/repositories/recognition/IRecognitionRepository.ts` | Peer recognitions |
+| `IAuditRepository` | `src/repositories/audit/IAuditRepository.ts` | Audit log |
+| `IBackupRepository` | `src/repositories/backup/IBackupRepository.ts` | Backup/restore metadata |
+| `ISprintRepository` | `src/repositories/sprint/ISprintRepository.ts` | Sprint CRUD |
+
+### Types to Match
+
+Core domain types in `src/types/index.ts`:
+- `User` (with `UserPermissions`, roles: superadmin/admin/lead/member/guest)
+- `Project`, `Squad`, `Release`, `Sprint`
+- `DataEntry`, `Defect`, `ReleaseEntry`
+- `TimesheetEntry` + `WorkingDay`
+- `Holiday`, `LeaveRequest`, `Announcement`
+- `NotificationEntry`, `UserNotification`
+- `Recognition`, `AuditLogEntry`, `BackupMetadata`
+- `AppState` (the complete persisted state shape)
+
+### Authentication
+
+Current local auth in `src/services/auth.service.ts` uses localStorage with simple password hashing. A backend should replace this with proper password hashing (bcrypt/argon2), JWT/session tokens, and secure password reset flows.
+
+---
+
 ## Features
 
 | Area | Capabilities |

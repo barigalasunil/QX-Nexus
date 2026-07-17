@@ -6,7 +6,7 @@
 import { User } from '@/types';
 
 // Repository boundary for user profile records.
-// Future Supabase integration should place profile table access here while
+// Future backend integration should place profile table access here while
 // keeping UI components and app services independent of the database.
 
 export const ProfileRepository = {

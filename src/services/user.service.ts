@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// UserService: single access point for all user operations backed by Supabase.
+// UserService: single access point for all user operations backed by localStorage.
 // Provides both synchronous (cache) and async (refresh) access.
 
 import { UserRepository } from '@/repositories/user';
@@ -39,7 +39,7 @@ export const UserService = {
     };
   },
 
-  /** Returns cached users, fetching from Supabase on first call. */
+  /** Returns cached users, fetching from localStorage on first call. */
   async getUsers(): Promise<User[]> {
     if (_cache.length > 0) return _cache;
     return fetchAll();
@@ -50,7 +50,7 @@ export const UserService = {
     return _cache;
   },
 
-  /** Force-refresh the cache from Supabase. */
+  /** Force-refresh the cache from localStorage. */
   async refresh(): Promise<User[]> {
     return fetchAll();
   },
@@ -75,7 +75,7 @@ export const UserService = {
     return _cache.filter(u => u.reportsTo === managerId);
   },
 
-  /** Create a user in Supabase and refresh the cache. */
+  /** Create a user in localStorage and refresh the cache. */
   async createUser(caller: User, user: User, plainPassword?: string): Promise<User> {
     if (!authorize(caller, 'create', null, user.role)) {
       throw new Error(`Unauthorized: ${caller.role} cannot create users with role ${user.role}`);
@@ -85,7 +85,7 @@ export const UserService = {
     return created;
   },
 
-  /** Update a user in Supabase and refresh the cache. */
+  /** Update a user in localStorage and refresh the cache. */
   async updateUser(caller: User, user: User): Promise<User> {
     const existing = _cache.find(u => u.id === user.id);
     if (!authorize(caller, 'edit', existing ?? user)) {
@@ -96,7 +96,7 @@ export const UserService = {
     return updated;
   },
 
-  /** Delete a user from Supabase and refresh the cache. */
+  /** Delete a user from localStorage and refresh the cache. */
   async deleteUser(caller: User, id: string): Promise<void> {
     const target = _cache.find(u => u.id === id);
     if (!target) throw new Error('User not found');

@@ -4,8 +4,8 @@
  */
 
 // Repository contract for persisted app state.
-// Services depend on this interface so the backing store can change from
-// localStorage to Supabase without changing UI or application workflows.
+// Services depend on this interface so the backing store can change without
+// changing UI or application workflows.
 
 export interface IAppStateRepository {
   loadAppState(): string | null;

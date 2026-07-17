@@ -3,8 +3,8 @@ import { User } from '@/types';
 import { UserService } from '@/services/user.service';
 
 /**
- * useUsers — reactively provides the full list of users from the Supabase-backed
- * UserService.  It subscribes to UserService cache changes and triggers a
+ * useUsers — reactively provides the full list of users from the localStorage-backed
+ * UserService. It subscribes to UserService cache changes and triggers a
  * re-fetch on mount so that components always see the latest data without
  * needing a browser refresh.
  *

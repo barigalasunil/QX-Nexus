@@ -6,7 +6,7 @@
 import { Defect } from '@/types';
 
 // Repository boundary for defect records.
-// Future Supabase integration should place defect persistence here while
+// Future backend integration should place defect persistence here while
 // leaving existing defect UI and workflows unchanged.
 
 export const DefectRepository = {

@@ -5,6 +5,6 @@
 
 // Feature flags for QX Nexus backend integration milestones.
 // When false, the application runs entirely on LocalStorage.
-// Flip a flag to true when the corresponding Supabase integration is ready.
+// Flip a flag to true when the corresponding backend integration is ready.
 
-export const USE_SUPABASE_AUTH = true;
+export const USE_BACKEND_AUTH = false;

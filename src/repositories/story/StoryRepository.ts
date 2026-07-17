@@ -6,7 +6,7 @@
 import { DataEntry } from '@/types';
 
 // Repository boundary for story and QA data-entry records.
-// Future Supabase integration should isolate story persistence here without
+// Future backend integration should isolate story persistence here without
 // moving business rules into UI components.
 
 export const StoryRepository = {

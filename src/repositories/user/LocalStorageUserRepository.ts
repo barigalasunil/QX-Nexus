@@ -14,12 +14,22 @@ import { getPermissionsForRole } from '@/utils';
 const STORAGE_KEY = 'qx-nexus:users';
 const SEED_KEY = 'qx-nexus:users:seeded';
 
+// Use the SAME password hash as AuthService for consistency
+const PASSWORD_PEPPER = 'qx-nexus-local-auth';
+
 function generateId(): string {
   return crypto.randomUUID?.() || Math.random().toString(36).slice(2);
 }
 
 function hashPassword(password: string): string {
-  return btoa(password + 'salt');
+  let hash = 0;
+  const salted = password + PASSWORD_PEPPER;
+  for (let i = 0; i < salted.length; i++) {
+    const char = salted.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0;
+  }
+  return hash.toString(16);
 }
 
 function verifyPassword(password: string, hash: string): boolean {

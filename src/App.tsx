@@ -58,7 +58,7 @@ const INITIAL_APP_STATE: AppState = {
 };
 
 export default function App() {
-  const { user: authUser, loading: authLoading, login: supabaseLogin, logout: supabaseLogout } = useAuth();
+  const { user: authUser, loading: authLoading, login: authLogin, logout: authLogout } = useAuth();
 
   // Theme settings (defaults to Dark mode for modern look)
   const [isDark, setIsDark] = useState<boolean>(() => {
@@ -82,12 +82,12 @@ export default function App() {
   const [appState, setAppState] = useState<AppState>(() => AppStateService.loadAppState(INITIAL_APP_STATE));
 
   const login = useCallback(async (email: string, password: string): Promise<User> => {
-    return supabaseLogin(email, password);
-  }, [supabaseLogin]);
+    return authLogin(email, password);
+  }, [authLogin]);
 
   const logout = useCallback(async () => {
-    await supabaseLogout();
-  }, [supabaseLogout]);
+    await authLogout();
+  }, [authLogout]);
 
   const previousNotificationStateRef = React.useRef<AppState | null>(null);
   const notificationUpdateRef = React.useRef(false);
@@ -415,7 +415,7 @@ export default function App() {
       UserService.updateUser(currentUser, updatedUser);
       return;
     } catch (error) {
-      // Keep the existing retry/auto-logout behavior while delegating credential checks to Supabase Auth.
+      // Keep the existing retry/auto-logout behavior while delegating credential checks to local auth.
     }
     const attempts = (currentUser.failedLoginAttempts || 0) + 1;
     if (attempts >= 5) {

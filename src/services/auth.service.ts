@@ -5,10 +5,9 @@
 
 // Local authentication service for localStorage-only mode.
 // Authenticates against seeded local users. Keeps the same public API
-// as the Supabase version so components/hooks don't need changes.
+// so components/hooks don't need changes.
 
 import { User } from '@/types';
-import { LocalStorageUserRepository } from '@/repositories/user/LocalStorageUserRepository';
 import { getPermissionsForRole } from '@/utils';
 
 const SESSION_KEY = 'qx-nexus:session';
@@ -183,39 +182,6 @@ function seedUsersIfNeeded(): User[] {
 
 export const AuthService = {
   async signIn(email: string, password: string) {
-    // TEMP: hardcoded login for local testing, remove before implementing real auth
-    if (email === 'admin@qxnexus.local' && password === 'Admin@123') {
-      const superAdmin: User = {
-        id: '1',
-        employeeId: 'EMP001',
-        username: 'Super Admin',
-        email: 'admin@qxnexus.local',
-        role: 'superadmin',
-        projectId: null,
-        squadId: null,
-        reportsTo: null,
-        jobTitle: 'Platform Owner',
-        baseOffice: 'Bengaluru',
-        permissions: getPermissionsForRole('superadmin'),
-        accessibleSquads: [],
-        directReports: [],
-        createdBy: null,
-        createdByRole: null,
-        mustChangePassword: false,
-        loginCount: 10,
-        failedLoginAttempts: 0,
-        lockedUntil: null,
-        passwordChangedAt: new Date().toISOString(),
-        loginHistory: [],
-        birthday: '01-01',
-        loginCountWithoutBirthday: 99,
-        notifications: [],
-      };
-      const token = generateSessionToken();
-      saveSession(token, superAdmin);
-      return { data: { session: { user: superAdmin, access_token: token } }, error: null };
-    }
-
     seedUsersIfNeeded();
     const users = getStoredUsers();
     const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase());

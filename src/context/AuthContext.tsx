@@ -4,7 +4,7 @@
  */
 
 // React authentication context for localStorage-only auth.
-// Works against seeded local users. Keeps the same public API as the Supabase version.
+// Works against seeded local users. Keeps the same public API.
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AuthService } from '@/services/auth.service';
