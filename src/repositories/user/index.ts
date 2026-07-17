@@ -4,4 +4,4 @@
  */
 
 export type { IUserRepository } from '@/repositories/user/IUserRepository';
-export { UserRepository } from '@/repositories/user/UserRepository';
+export { LocalStorageUserRepository as UserRepository } from '@/repositories/user/LocalStorageUserRepository';

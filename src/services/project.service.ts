@@ -1,9 +1,9 @@
-import { projectRepository } from "@/repositories/supabase/ProjectRepository";
-import { Project } from "@/types/project";
+import { ProjectRepository } from "@/repositories/project/ProjectRepository";
+import { Project } from "@/types";
 
 class ProjectServiceImpl {
   async fetchProjects(): Promise<Project[]> {
-    return projectRepository.fetchProjects();
+    return ProjectRepository.fetchProjects();
   }
 
   async getProjects(): Promise<Project[]> {
@@ -20,13 +20,13 @@ class ProjectServiceImpl {
     const projectCode = this.generateProjectCode(trimmedProjectName);
 
     const isNameExists =
-      await projectRepository.isProjectNameExists(trimmedProjectName);
+      await ProjectRepository.isProjectNameExists(trimmedProjectName);
 
     if (isNameExists) {
       throw new Error("Project name already exists.");
     }
 
-    const isCodeExists = await projectRepository.isProjectCodeExists(
+    const isCodeExists = await ProjectRepository.isProjectCodeExists(
       projectCode
     );
 
@@ -34,9 +34,10 @@ class ProjectServiceImpl {
       throw new Error("Project code already exists.");
     }
 
-    return projectRepository.createProject({
+    return ProjectRepository.createProject({
       project_code: projectCode,
       project_name: trimmedProjectName,
+      name: trimmedProjectName,
       description: null,
       active: true,
       created_by: createdBy,
@@ -44,11 +45,11 @@ class ProjectServiceImpl {
   }
 
   async updateProject(id: string, project: Partial<Project>): Promise<Project> {
-    return projectRepository.updateProject(id, project);
+    return ProjectRepository.updateProject(id, project);
   }
 
   async deleteProject(id: string): Promise<void> {
-    return projectRepository.deleteProject(id);
+    return ProjectRepository.deleteProject(id);
   }
 
   private generateProjectCode(projectName: string): string {

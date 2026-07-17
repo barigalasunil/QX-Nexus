@@ -9,6 +9,7 @@ export interface IUserRepository {
   getAll(): Promise<User[]>;
   getById(id: string): Promise<User | null>;
   getByUsername(username: string): Promise<User | null>;
+  getByEmail(email: string): Promise<User | null>;
   create(user: User, plainPassword?: string): Promise<User>;
   update(user: User): Promise<User>;
   delete(id: string): Promise<void>;

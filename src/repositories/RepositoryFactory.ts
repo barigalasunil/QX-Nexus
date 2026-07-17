@@ -4,8 +4,7 @@
  */
 
 // Central repository selection point for QX Nexus persistence.
-// Change the returned repository here to move the application from
-// localStorage to another backend without touching services or UI components.
+// This is a localStorage-only build — no backend dependencies.
 
 import { IAppStateRepository } from '@/repositories/IAppStateRepository';
 import { IAnnouncementRepository } from '@/repositories/announcement';
@@ -34,7 +33,7 @@ import { SprintRepository } from '@/repositories/sprint';
 import { ITimesheetRepository } from '@/repositories/timesheet';
 import { TimesheetRepository } from '@/repositories/timesheet';
 import { IUserRepository } from '@/repositories/user';
-import { UserRepository } from '@/repositories/user';
+import { LocalStorageUserRepository } from '@/repositories/user/LocalStorageUserRepository';
 
 export const RepositoryFactory = {
   getRepository(): IAppStateRepository {
@@ -42,7 +41,7 @@ export const RepositoryFactory = {
   },
 
   getUserRepository(): IUserRepository {
-    return UserRepository;
+    return LocalStorageUserRepository;
   },
 
   getReleaseRepository(): IReleaseRepository {

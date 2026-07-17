@@ -3,10 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// Foundation AuthService wrapping the existing Supabase Auth implementation.
+// Foundation AuthService for localStorage-only mode.
 // Re-exports AuthService from services layer for discoverability under src/auth/.
 
 import { AuthService as ServiceAuthService } from '@/services/auth.service';
+import { User } from '@/types';
 
 export const AuthService = {
   login(email: string, password: string) {
@@ -25,7 +26,7 @@ export const AuthService = {
     return ServiceAuthService.getCurrentUser();
   },
 
-  onAuthStateChange(callback: (session: import('@supabase/supabase-js').Session | null) => void) {
+  onAuthStateChange(callback: (session: { user: User | null; access_token: string } | null) => void) {
     return ServiceAuthService.onAuthStateChange(callback);
   },
 };

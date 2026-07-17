@@ -3,18 +3,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// React authentication context for Supabase Auth.
-// It exposes the authenticated Supabase session and the matching application
-// profile from the profiles table, while all other app data remains local.
+// React authentication context for localStorage-only auth.
+// Works against seeded local users. Keeps the same public API as the Supabase version.
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { Session } from '@supabase/supabase-js';
 import { AuthService } from '@/services/auth.service';
 import { User } from '@/types';
 
+interface LocalSession {
+  user: User | null;
+  access_token: string;
+}
+
 type AuthContextValue = {
   user: User | null;
-  session: Session | null;
+  session: LocalSession | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
@@ -24,10 +27,10 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<LocalSession | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadUserForSession = useCallback(async (nextSession: Session | null) => {
+  const loadUserForSession = useCallback(async (nextSession: LocalSession | null) => {
     if (!nextSession?.user) {
       setSession(null);
       setUser(null);
@@ -43,9 +46,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const initialiseAuth = async () => {
       try {
-        const currentSession = await AuthService.getSession();
+        const { data, error } = await AuthService.getSession();
         if (!cancelled) {
-          await loadUserForSession(currentSession);
+          if (error) throw error;
+          await loadUserForSession(data.session);
         }
       } catch (error) {
         if (!cancelled) {
@@ -59,7 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     initialiseAuth();
 
-    const { data } = AuthService.onAuthStateChange(async nextSession => {
+    const { data } = AuthService.onAuthStateChange(async (nextSession) => {
       try {
         await loadUserForSession(nextSession);
       } catch (error) {
@@ -84,7 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw error;
       }
       if (!data.session?.user) {
-        throw new Error('Unable to start a Supabase session.');
+        throw new Error('Unable to start a local session.');
       }
       const profile = await AuthService.loadProfile(data.session.user);
       setSession(data.session);
