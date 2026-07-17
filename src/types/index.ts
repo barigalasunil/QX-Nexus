@@ -166,7 +166,7 @@ export interface WorkingDay {
   date: string; // YYYY-MM-DD
   dayName: string;
   isWeekendDay: boolean;
-  status: 'Weekend' | 'Working' | 'Leave' | 'Holiday' | 'WFH' | 'Training' | null;
+  status: 'Weekend' | 'Working' | 'Leave' | 'Holiday' | 'WFH' | 'Half Day' | 'Comp Off' | null;
   isStatusSet: boolean;
   isNightDeployment: boolean;
   isWeekendSupport: boolean;
