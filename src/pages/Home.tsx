@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { ThemeTokens, commonStyles } from '@/styles/theme';
-import { AppState, User, Recognition } from '@/types';
+import { AppState, User, Recognition, Announcement } from '@/types';
 import { getGreeting, getRelativeTime, getCurrentWeekRange, getNext14DaysRange, generateId } from '@/utils';
-import { Plus, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, X, ChevronLeft, ChevronRight, Megaphone, Clock, AlertTriangle, Check, AlertCircle, Info } from 'lucide-react';
 import { UserService } from '@/services/user.service';
 
 interface HomeProps {
@@ -286,6 +286,37 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
     return { birthdays: withDates.slice(0, 5), isOwnBirthdayToday: !!ownBday, total: allBdays.length };
   }, [currentUser, rangeStart, rangeEnd, todayStr]);
 
+  // ---- Important Dates ----
+  const importantDates = useMemo(() => {
+    const projUsers = currentUser.role === 'superadmin'
+      ? UserService.getUsersSync()
+      : UserService.getUsersSync().filter(u => u.projectId === currentUser.projectId);
+    const allDates: { user: User; label: string; date: Date; originalDate: string }[] = [];
+    projUsers.forEach(u => {
+      (u.importantDates || []).forEach(d => {
+        if (!d.date) return;
+        const thisYear = new Date().getFullYear();
+        const [month, day] = d.date.split('-').map(Number);
+        const dateObj = new Date(thisYear, month - 1, day);
+        const dateStr = dateObj.toISOString().slice(0, 10);
+        if (dateStr >= rangeStart && dateStr <= rangeEnd) {
+          allDates.push({ user: u, label: d.label, date: dateObj, originalDate: d.date });
+        }
+      });
+    });
+    return allDates.sort((a, b) => a.date.getTime() - b.date.getTime());
+  }, [currentUser, rangeStart, rangeEnd]);
+
+  // ---- Active Announcements ----
+  const activeAnnouncements = useMemo(() => {
+    const announcements = appState.announcements || [];
+    return announcements
+      .filter(a => !a.expiresAt || a.expiresAt >= todayStr)
+      .filter(a => a.targetRoles.includes(currentUser.role))
+      .filter(a => !a.projectId || a.projectId === currentUser.projectId || currentUser.role === 'superadmin')
+      .sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime());
+  }, [appState.announcements, currentUser.role, currentUser.projectId, todayStr]);
+
   // ---- Holidays ----
   const upcomingHolidays = useMemo(() => {
     const holidays = appState.holidays.filter(h => h.date >= todayStr && h.date <= rangeEnd);
@@ -447,6 +478,116 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
           </div>
         </div>
       </div>
+
+      {/* Active Announcements */}
+      {activeAnnouncements.length > 0 && (
+        <section style={{ animation: 'pageEnter 0.35s ease-out forwards', animationDelay: '0.05s', animationFillMode: 'both' }}>
+          <h2 style={{ margin: '0 0 10px', fontSize: '14px', fontWeight: 700, color: theme.text, display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Megaphone size={16} style={{ color: theme.blue }} />
+            Announcements
+          </h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {activeAnnouncements.map(announcement => {
+              const typeColors: Record<Announcement['type'], string> = {
+                info: theme.blue,
+                warning: theme.amber,
+                success: theme.green,
+                alert: theme.red,
+              };
+              const typeIcons: Record<Announcement['type'], typeof Megaphone | typeof AlertTriangle | typeof Check | typeof AlertCircle | typeof Info> = {
+                info: Megaphone,
+                warning: AlertTriangle,
+                success: Check,
+                alert: AlertCircle,
+              };
+              const Icon = typeIcons[announcement.type] || Megaphone;
+              const typeColor = typeColors[announcement.type] || theme.blue;
+              return (
+                <div
+                  key={announcement.id}
+                  style={{
+                    display: 'flex',
+                    gap: '12px',
+                    padding: '12px 14px',
+                    backgroundColor: `${typeColor}12`,
+                    border: `1px solid ${typeColor}40`,
+                    borderLeft: `4px solid ${typeColor}`,
+                    borderRadius: '8px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '6px', backgroundColor: `${typeColor}1a`, color: typeColor, flexShrink: 0 }}>
+                    <Icon size={16} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                      <h3 style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: theme.text }}>
+                        {announcement.title}
+                      </h3>
+                      <span style={{ fontSize: '10px', color: theme.muted, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        Posted {new Date(announcement.postedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </span>
+                    </div>
+                    <p style={{ margin: '4px 0 0', fontSize: '12px', color: theme.text, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                      {announcement.message}
+                    </p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px', fontSize: '10px', color: theme.muted }}>
+                      <span>By <strong style={{ color: theme.text }}>{announcement.postedByName}</strong></span>
+                      {announcement.expiresAt && (
+                        <>
+                          <span>•</span>
+                          <Clock size={10} />
+                          <span>Expires {new Date(announcement.expiresAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                        </>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px', alignItems: 'center' }}>
+                      {announcement.targetRoles.map(role => (
+                        <span key={role} style={{
+                          fontSize: '10px',
+                          fontWeight: 600,
+                          padding: '2px 8px',
+                          borderRadius: '999px',
+                          backgroundColor: `${theme.blue}1a`,
+                          color: theme.blue,
+                          border: `1px solid ${theme.blue}33`,
+                        }}>
+                          {role}
+                        </span>
+                      ))}
+                      {announcement.projectId && (
+                        <span style={{
+                          fontSize: '10px',
+                          fontWeight: 600,
+                          padding: '2px 8px',
+                          borderRadius: '999px',
+                          backgroundColor: `${theme.indigo}1a`,
+                          color: theme.indigo,
+                          border: `1px solid ${theme.indigo}33`,
+                        }}>
+                          {appState.projects.find(p => p.id === announcement.projectId)?.name || announcement.projectId}
+                        </span>
+                      )}
+                      {!announcement.projectId && (
+                        <span style={{
+                          fontSize: '10px',
+                          fontWeight: 600,
+                          padding: '2px 8px',
+                          borderRadius: '999px',
+                          backgroundColor: `${theme.indigo}1a`,
+                          color: theme.indigo,
+                          border: `1px solid ${theme.indigo}33`,
+                        }}>
+                          All Projects
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Section 1: My Week at a Glance */}
       <section style={{ animation: 'pageEnter 0.4s ease-out forwards', animationDelay: '0.1s' }}>
@@ -616,6 +757,45 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
             </div>
           )}
         </section>
+
+        {/* Upcoming Important Dates */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <section style={{ ...commonStyles.card(theme), animation: 'pageEnter 0.35s ease-out forwards', animationDelay: '0.7s', animationFillMode: 'both' }}>
+            <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              🔔 Upcoming Important Dates
+            </h3>
+            {importantDates.length === 0 ? (
+              <div style={{ color: theme.muted, fontSize: '12px' }}>No important dates in the next 14 days</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {importantDates.slice(0, 5).map(({ user, label, date, originalDate }) => {
+                  const isToday = date.toISOString().slice(0, 10) === todayStr;
+                  const squad = appState.squads.find(s => s.id === user.squadId);
+                  return (
+                    <div key={`${user.id}-${originalDate}`} style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '6px 8px', borderRadius: '6px',
+                      backgroundColor: isToday ? `${theme.blue}20` : 'transparent',
+                      borderBottom: `1px solid ${theme.border}`,
+                    }}>
+                      <span style={{ fontSize: '12px', color: isToday ? theme.blue : theme.text, fontWeight: isToday ? 700 : 500 }}>
+                        {isToday ? '🔔 Today!' : formatDateDisplay(date.toISOString().slice(0, 10))}
+                      </span>
+                      <span style={{ fontSize: '12px', color: theme.muted, margin: '0 8px' }}>{label}</span>
+                      <span style={{ fontSize: '12px', color: theme.text, fontWeight: 500 }}>{user.username}</span>
+                      <span style={{ fontSize: '11px', color: theme.muted }}>{squad?.name || ''}</span>
+                    </div>
+                  );
+                })}
+                {importantDates.length > 5 && (
+                  <div style={{ color: theme.muted, fontSize: '11px', marginTop: '4px' }}>
+                    +{importantDates.length - 5} more in this period
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        </div>
 
         {/* Upcoming Birthdays */}
         <section style={{ ...commonStyles.card(theme), animation: 'pageEnter 0.35s ease-out forwards', animationDelay: '0.6s', animationFillMode: 'both' }}>

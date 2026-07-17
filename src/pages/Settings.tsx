@@ -18,7 +18,7 @@ import { useUsers } from '@/hooks/useUsers';
 import { useReferenceData } from '@/hooks/useReferenceData';
 import { useSquads } from '@/hooks/useSquads';
 import { authorize, filterVisibleUsers } from '@/utils/authorization';
-import { Plus, Trash2, Shield, UserX, UserCheck, Key, Settings as SettingsIcon, X, HardDrive } from 'lucide-react';
+import { Plus, Trash2, Shield, UserX, UserCheck, Key, Settings as SettingsIcon, X, HardDrive, Calendar, Bell, Save } from 'lucide-react';
 
 const BASE_OFFICE_OPTIONS: NonNullable<User['baseOffice']>[] = ['Bengaluru', 'Mumbai'];
 
@@ -33,7 +33,7 @@ interface SettingsProps {
 }
 
 export function Settings({ currentUser, appState, setAppState, showToast, theme, readOnly = false, onUpdateCurrentUser }: SettingsProps) {
-  const [activeTab, setActiveTab] = useState<'users' | 'projects' | 'squads' | 'fields' | 'audit' | 'backup' | 'import'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'projects' | 'squads' | 'fields' | 'audit' | 'backup' | 'import' | 'profile'>('users');
 
   // Input states for My Account
   const [editAccountForm, setEditAccountForm] = useState({
@@ -107,6 +107,82 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       email: currentUser.email || '',
     }));
   }, [currentUser]);
+
+  // Input states for My Profile (accessible to ALL roles)
+  const [profileForm, setProfileForm] = useState({
+    employeeId: currentUser.employeeId || '',
+    username: currentUser.username,
+    email: currentUser.email || '',
+    jobTitle: currentUser.jobTitle || '',
+    birthdayDay: currentUser.birthday ? currentUser.birthday.split('-')[1] : '',
+    birthdayMonth: currentUser.birthday ? currentUser.birthday.split('-')[0] : '',
+    importantDates: (currentUser.importantDates || []).map(d => ({ ...d })),
+  });
+  const [profileErrors, setProfileErrors] = useState<Record<string, string>>({});
+  const updateProfileForm = (key: keyof typeof profileForm, value: any) => {
+    setProfileForm(previous => ({ ...previous, [key]: value }));
+    setProfileErrors(previous => {
+      const next = { ...previous };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const addImportantDate = () => {
+    const newDate = { id: generateId(), label: '', date: '' };
+    updateProfileForm('importantDates', [...profileForm.importantDates, newDate]);
+  };
+
+  const removeImportantDate = (id: string) => {
+    updateProfileForm('importantDates', profileForm.importantDates.filter(d => d.id !== id));
+  };
+
+  const updateImportantDate = (id: string, field: 'label' | 'date', value: string) => {
+    updateProfileForm('importantDates', profileForm.importantDates.map(d => d.id === id ? { ...d, [field]: value } : d));
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const nextErrors: Record<string, string> = {};
+    if (!profileForm.birthdayDay) nextErrors.birthdayDay = 'Day is required if month is set.';
+    if (!profileForm.birthdayMonth) nextErrors.birthdayMonth = 'Month is required if day is set.';
+    if (profileForm.birthdayDay && profileForm.birthdayMonth) {
+      const d = parseInt(profileForm.birthdayDay, 10);
+      const m = parseInt(profileForm.birthdayMonth, 10);
+      if (d < 1 || d > 31) nextErrors.birthdayDay = 'Invalid day (1-31).';
+      if (m < 1 || m > 12) nextErrors.birthdayMonth = 'Invalid month (1-12).';
+    }
+    profileForm.importantDates.forEach((d) => {
+      if (!d.label.trim()) nextErrors[`importantDateLabel${d.id}`] = 'Label is required.';
+      if (!d.date) nextErrors[`importantDateDate${d.id}`] = 'Date is required.';
+      if (d.date && !/^\d{2}-\d{2}$/.test(d.date)) nextErrors[`importantDateDate${d.id}`] = 'Use MM-DD format.';
+    });
+    setProfileErrors(nextErrors);
+    if (Object.keys(nextErrors).length) return;
+
+    const birthday = profileForm.birthdayDay && profileForm.birthdayMonth
+      ? `${profileForm.birthdayMonth.padStart(2, '0')}-${profileForm.birthdayDay.padStart(2, '0')}`
+      : null;
+
+    const updatedUser = {
+      ...currentUser,
+      birthday,
+      loginCountWithoutBirthday: birthday ? 99 : currentUser.loginCountWithoutBirthday,
+      importantDates: profileForm.importantDates.map(d => ({
+        id: d.id,
+        label: sanitise(d.label.trim()),
+        date: d.date,
+      })),
+    };
+
+    await UserService.updateUser(currentUser, updatedUser);
+
+    if (onUpdateCurrentUser) {
+      onUpdateCurrentUser(updatedUser);
+    }
+
+    showToast('Profile saved successfully!', 'success');
+  };
 
   useEffect(() => {
     if (isAdmin) {
@@ -747,7 +823,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       
       {/* Tab selection */}
       <div style={{ display: 'flex', borderBottom: `2px solid ${theme.border}`, gap: '16px' }}>
-        {(['users', ...(isSuperAdmin ? ['projects'] : []), 'squads', 'fields', ...(isSuperAdmin ? ['audit'] : []), ...(isSuperAdmin ? ['backup'] : []), ...(isSuperAdmin ? ['import'] : [])] as const).map((tab) => (
+        {(['users', ...(isSuperAdmin ? ['projects'] : []), 'squads', 'fields', ...(isSuperAdmin ? ['audit'] : []), ...(isSuperAdmin ? ['backup'] : []), ...(isSuperAdmin ? ['import'] : []), 'profile'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab as typeof activeTab)}
@@ -764,7 +840,7 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
               textTransform: 'capitalize',
             }}
           >
-            {tab === 'fields' ? 'Custom Fields' : tab === 'audit' ? 'Audit Log' : tab === 'backup' ? 'Backup & Restore' : tab === 'import' ? 'Import Data' : tab}
+            {tab === 'fields' ? 'Custom Fields' : tab === 'audit' ? 'Audit Log' : tab === 'backup' ? 'Backup & Restore' : tab === 'import' ? 'Import Data' : tab === 'profile' ? 'My Profile' : tab}
           </button>
         ))}
       </div>
@@ -1395,6 +1471,161 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
           showToast={showToast}
           theme={theme}
         />
+      )}
+
+      {/* My Profile - accessible to ALL roles */}
+      {activeTab === 'profile' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div style={commonStyles.card(theme)}>
+            <h3 style={{ fontSize: '15px', fontWeight: 600, color: theme.text, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', borderLeft: `4px solid ${theme.blue}`, paddingLeft: '8px' }}>
+              <Calendar size={16} style={{ color: theme.blue }} />
+              My Profile
+            </h3>
+            <form id="profile-form" noValidate onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                <Field
+                  label="Employee ID"
+                  type="text"
+                  placeholder="Internal employee ID"
+                  value={profileForm.employeeId}
+                  onChange={(v) => updateProfileForm('employeeId', v)}
+                  error={profileErrors.employeeId}
+                  theme={theme}
+                />
+                <Field
+                  label="Username (Display Name)"
+                  type="text"
+                  placeholder="Display name"
+                  value={profileForm.username}
+                  onChange={(v) => updateProfileForm('username', v)}
+                  error={profileErrors.username}
+                  required
+                  theme={theme}
+                />
+                <Field
+                  label="Email Address"
+                  type="email"
+                  placeholder="user@company.com"
+                  value={profileForm.email}
+                  onChange={(v) => updateProfileForm('email', v)}
+                  error={profileErrors.email}
+                  theme={theme}
+                />
+                <Field
+                  label="Job Title"
+                  type="text"
+                  placeholder="e.g. Senior QA Engineer"
+                  value={profileForm.jobTitle}
+                  onChange={(v) => updateProfileForm('jobTitle', v)}
+                  theme={theme}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={commonStyles.label(theme)}>Birthday (Day)</label>
+                  <select
+                    value={profileForm.birthdayDay}
+                    onChange={(e) => updateProfileForm('birthdayDay', e.target.value)}
+                    style={commonStyles.select(theme, true)}
+                  >
+                    <option value="">Day</option>
+                    {Array.from({ length: 31 }, (_, i) => <option key={i + 1} value={String(i + 1)}>{i + 1}</option>)}
+                  </select>
+                  {profileErrors.birthdayDay && <span style={{ color: theme.red, fontSize: '11px', marginTop: '3px', display: 'block' }}>{profileErrors.birthdayDay}</span>}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={commonStyles.label(theme)}>Birthday (Month)</label>
+                  <select
+                    value={profileForm.birthdayMonth}
+                    onChange={(e) => updateProfileForm('birthdayMonth', e.target.value)}
+                    style={commonStyles.select(theme, true)}
+                  >
+                    <option value="">Month</option>
+                    {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((name, i) =>
+                      <option key={i + 1} value={String(i + 1)}>{name}</option>
+                    )}
+                  </select>
+                  {profileErrors.birthdayMonth && <span style={{ color: theme.red, fontSize: '11px', marginTop: '3px', display: 'block' }}>{profileErrors.birthdayMonth}</span>}
+                </div>
+              </div>
+              <div style={{ padding: '12px 16px', backgroundColor: `${theme.amber}15`, border: `1px solid ${theme.amber}30`, borderRadius: '8px', fontSize: '12px', color: theme.amber }}>
+                <span style={{ fontWeight: 700 }}>Tip:</span> Birthday is stored as month-day only (year is private). It powers the birthday widget on Home.
+              </div>
+            </form>
+          </div>
+
+          <div style={commonStyles.card(theme)}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 600, color: theme.text, display: 'flex', alignItems: 'center', gap: '8px', borderLeft: `4px solid ${theme.amber}`, paddingLeft: '8px' }}>
+                <Bell size={16} style={{ color: theme.amber }} />
+                Important Dates
+              </h3>
+              <button type="button" onClick={addImportantDate} style={{ ...commonStyles.button(theme, 'primary', 'sm'), display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Plus size={14} /> Add Date
+              </button>
+            </div>
+
+            {profileForm.importantDates.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '24px', color: theme.muted, fontSize: '13px' }}>
+                No important dates added yet. Add work anniversaries, certifications, or any personal milestones.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {profileForm.importantDates.map((date) => (
+                  <div key={date.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', backgroundColor: theme.inputBg, border: `1px solid ${theme.border}`, borderRadius: '8px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: '120px' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 700, color: theme.muted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Date</span>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <select
+                          value={date.date ? date.date.split('-')[1] : ''}
+                          onChange={(e) => updateImportantDate(date.id, 'date', `${date.date.split('-')[0]}-${e.target.value.padStart(2, '0')}`)}
+                          style={{ ...commonStyles.select(theme, true), width: '80px' }}
+                        >
+                          <option value="">Day</option>
+                          {Array.from({ length: 31 }, (_, i) => <option key={i + 1} value={String(i + 1)}>{i + 1}</option>)}
+                        </select>
+                        <select
+                          value={date.date ? date.date.split('-')[0] : ''}
+                          onChange={(e) => updateImportantDate(date.id, 'date', `${e.target.value.padStart(2, '0')}-${date.date.split('-')[1]}`)}
+                          style={{ ...commonStyles.select(theme, true), width: '140px' }}
+                        >
+                          <option value="">Month</option>
+                          {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((name, i) =>
+                            <option key={i + 1} value={String(i + 1)}>{name}</option>
+                          )}
+                        </select>
+                      </div>
+                      {profileErrors[`importantDateDate${date.id}`] && <span style={{ color: theme.red, fontSize: '10px' }}>{profileErrors[`importantDateDate${date.id}`]}</span>}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
+                      <span style={{ fontSize: '10px', fontWeight: 700, color: theme.muted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Label</span>
+                      <input
+                        type="text"
+                        value={date.label}
+                        onChange={(e) => updateImportantDate(date.id, 'label', e.target.value)}
+                        placeholder="e.g. Work Anniversary, Certification Renewal"
+                        style={commonStyles.input(theme)}
+                      />
+                      {profileErrors[`importantDateLabel${date.id}`] && <span style={{ color: theme.red, fontSize: '10px' }}>{profileErrors[`importantDateLabel${date.id}`]}</span>}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeImportantDate(date.id)}
+                      style={{ border: 0, background: 'transparent', color: theme.red, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="submit" form="profile-form" style={commonStyles.button(theme, 'primary')}>
+                <Save size={16} /> Save Profile
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* In-app Generated Password Modal */}
