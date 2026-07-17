@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { ThemeTokens, commonStyles } from '@/styles/theme';
-import { AppState, User, Recognition } from '@/types';
+import { AppState, User, Recognition, Announcement } from '@/types';
 import { getGreeting, getRelativeTime, getCurrentWeekRange, getNext14DaysRange, generateId } from '@/utils';
 import { Plus, X, ChevronLeft, ChevronRight, Megaphone, Clock, AlertTriangle, Check, AlertCircle, Info } from 'lucide-react';
 import { UserService } from '@/services/user.service';
@@ -307,6 +307,16 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
     });
     return allDates.sort((a, b) => a.date.getTime() - b.date.getTime());
   }, [currentUser, rangeStart, rangeEnd]);
+
+  // ---- Active Announcements ----
+  const activeAnnouncements = useMemo(() => {
+    const announcements = appState.announcements || [];
+    return announcements
+      .filter(a => !a.expiresAt || a.expiresAt >= todayStr)
+      .filter(a => a.targetRoles.includes(currentUser.role))
+      .filter(a => !a.projectId || a.projectId === currentUser.projectId || currentUser.role === 'superadmin')
+      .sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime());
+  }, [appState.announcements, currentUser.role, currentUser.projectId, todayStr]);
 
   // ---- Holidays ----
   const upcomingHolidays = useMemo(() => {
@@ -758,6 +768,45 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
             </div>
           )}
         </section>
+
+        {/* Upcoming Important Dates */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <section style={{ ...commonStyles.card(theme), animation: 'pageEnter 0.35s ease-out forwards', animationDelay: '0.7s', animationFillMode: 'both' }}>
+            <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              🔔 Upcoming Important Dates
+            </h3>
+            {importantDates.length === 0 ? (
+              <div style={{ color: theme.muted, fontSize: '12px' }}>No important dates in the next 14 days</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {importantDates.slice(0, 5).map(({ user, label, date, originalDate }) => {
+                  const isToday = date.toISOString().slice(0, 10) === todayStr;
+                  const squad = appState.squads.find(s => s.id === user.squadId);
+                  return (
+                    <div key={`${user.id}-${originalDate}`} style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '6px 8px', borderRadius: '6px',
+                      backgroundColor: isToday ? `${theme.blue}20` : 'transparent',
+                      borderBottom: `1px solid ${theme.border}`,
+                    }}>
+                      <span style={{ fontSize: '12px', color: isToday ? theme.blue : theme.text, fontWeight: isToday ? 700 : 500 }}>
+                        {isToday ? '🔔 Today!' : formatDateDisplay(date.toISOString().slice(0, 10))}
+                      </span>
+                      <span style={{ fontSize: '12px', color: theme.muted, margin: '0 8px' }}>{label}</span>
+                      <span style={{ fontSize: '12px', color: theme.text, fontWeight: 500 }}>{user.username}</span>
+                      <span style={{ fontSize: '11px', color: theme.muted }}>{squad?.name || ''}</span>
+                    </div>
+                  );
+                })}
+                {importantDates.length > 5 && (
+                  <div style={{ color: theme.muted, fontSize: '11px', marginTop: '4px' }}>
+                    +{importantDates.length - 5} more in this period
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        </div>
 
         {/* Upcoming Birthdays */}
         <section style={{ ...commonStyles.card(theme), animation: 'pageEnter 0.35s ease-out forwards', animationDelay: '0.6s', animationFillMode: 'both' }}>

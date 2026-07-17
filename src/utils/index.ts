@@ -6,6 +6,7 @@
 import * as XLSX from 'xlsx';
 import { AppState, User, UserPermissions } from '@/types';
 import { UserService } from '@/services/user.service';
+import { getTheme } from '@/styles/theme';
 
 export const DEFAULT_PERMISSIONS = {
   superadmin: {
@@ -218,17 +219,133 @@ export const getDaysForMonth = (year: number, month: number) => {
 };
 
 // Excel / CSV Export helper
-export const exportToExcel = (sheets: { sheetName: string; data: any[] }[], fileName: string) => {
+export interface ExportSheetOptions {
+  sheetName: string;
+  data: any[];
+  freezeHeader?: boolean;
+  autoWidth?: boolean;
+  numberFormats?: Record<string, string>;
+}
+
+export const exportToExcel = (sheets: ExportSheetOptions[], fileName: string) => {
   try {
     const wb = XLSX.utils.book_new();
-    sheets.forEach(({ sheetName, data }) => {
+    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const theme = getTheme(isDark);
+
+    sheets.forEach(({ sheetName, data, freezeHeader = true, autoWidth = true, numberFormats = {} }) => {
+      if (!data.length) {
+        const ws = XLSX.utils.aoa_to_sheet([['No data available']]);
+        XLSX.utils.book_append_sheet(wb, ws, sheetName.substring(0, 30));
+        return;
+      }
+
       const ws = XLSX.utils.json_to_sheet(data);
-      XLSX.utils.book_append_sheet(wb, ws, sheetName.substring(0, 30)); // 31 chars max for sheet name
+
+      // Bold headers and apply styling
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      const headerRow = range.s.r;
+      const cols = range.e.c - range.s.c + 1;
+
+      // Style header row
+      // NOTE: Cell styles (.s) require SheetJS Pro or xlsx-style add-on.
+      // The community xlsx package silently ignores .s, so this is forward-compatible
+      // when upgrading to SheetJS Pro. Auto-widths and number formats work in community.
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const cellRef = XLSX.utils.encode_cell({ r: headerRow, c });
+        if (!ws[cellRef]) continue;
+        ws[cellRef].s = {
+          font: { bold: true, color: { rgb: 'FFFFFF' } },
+          fill: { fgColor: { rgb: theme.blue.replace('#', '') } },
+          alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+          border: {
+            top: { style: 'thin', color: { rgb: 'FFFFFF' } },
+            bottom: { style: 'thin', color: { rgb: 'FFFFFF' } },
+            left: { style: 'thin', color: { rgb: 'FFFFFF' } },
+            right: { style: 'thin', color: { rgb: 'FFFFFF' } },
+          },
+        };
+      }
+
+      // Style data rows with alternating colors and number formatting
+      for (let r = headerRow + 1; r <= range.e.r; r++) {
+        const isEven = (r - headerRow) % 2 === 0;
+        for (let c = range.s.c; c <= range.e.c; c++) {
+          const cellRef = XLSX.utils.encode_cell({ r, c });
+          if (!ws[cellRef]) continue;
+          const cell = ws[cellRef];
+          const headerCellRef = XLSX.utils.encode_cell({ r: headerRow, c });
+          const headerName = ws[headerCellRef]?.v as string || '';
+
+          ws[cellRef].s = {
+            font: { color: { rgb: isDark ? 'F8FAFC' : '0F172A' } },
+            fill: { fgColor: { rgb: isEven ? (isDark ? '1E293B' : 'F8FAFC') : (isDark ? '0F172A' : 'FFFFFF') } },
+            alignment: { vertical: 'center', wrapText: true },
+            border: {
+              top: { style: 'thin', color: { rgb: isDark ? '334155' : 'E2E8F0' } },
+              bottom: { style: 'thin', color: { rgb: isDark ? '334155' : 'E2E8F0' } },
+              left: { style: 'thin', color: { rgb: isDark ? '334155' : 'E2E8F0' } },
+              right: { style: 'thin', color: { rgb: isDark ? '334155' : 'E2E8F0' } },
+            },
+          };
+
+          // Apply number formatting
+          if (numberFormats[headerName]) {
+            ws[cellRef].z = numberFormats[headerName];
+          } else if (headerName.includes('%') || headerName.includes('Rate')) {
+            ws[cellRef].z = '0.0%';
+          } else if (headerName.includes('Points') || headerName.includes('Story_Points')) {
+            ws[cellRef].z = '#,##0';
+          }
+        }
+      }
+
+      // Freeze header row (SheetJS Pro for full styling; !views works in community xlsx)
+      if (freezeHeader) {
+        ws['!views'] = [{ state: 'frozen', ySplit: 1 }];
+      }
+
+      // Auto column widths
+      if (autoWidth) {
+        const colWidths: { wch: number }[] = [];
+        for (let c = range.s.c; c <= range.e.c; c++) {
+          let maxWidth = 10;
+          for (let r = headerRow; r <= Math.min(range.e.r, headerRow + 50); r++) {
+            const cellRef = XLSX.utils.encode_cell({ r, c });
+            if (ws[cellRef]?.v) {
+              const val = String(ws[cellRef].v);
+              maxWidth = Math.max(maxWidth, Math.min(val.length + 2, 50));
+            }
+          }
+          colWidths.push({ wch: maxWidth });
+        }
+        ws['!cols'] = colWidths;
+      }
+
+      XLSX.utils.book_append_sheet(wb, ws, sheetName.substring(0, 30));
     });
+
     XLSX.writeFile(wb, `${fileName}.xlsx`);
   } catch (error) {
     console.error('Failed to export to Excel', error);
   }
+};
+
+// Styled Excel Export — thin wrapper adding theme-aware column widths and freeze panes
+export interface StyledSheet {
+  sheetName: string;
+  data: any[];
+}
+
+export const exportToStyledExcel = (sheets: StyledSheet[], fileName: string, theme?: ReturnType<typeof getTheme>) => {
+  const t = theme || getTheme(false);
+  const exportOptions: ExportSheetOptions[] = sheets.map(sheet => ({
+    sheetName: sheet.sheetName,
+    data: sheet.data,
+    freezeHeader: true,
+    autoWidth: true,
+  }));
+  exportToExcel(exportOptions, fileName);
 };
 
 export function generateStrongPassword(): string {
@@ -341,3 +458,193 @@ export const exportToCSV = (data: any[], fileName: string) => {
     console.error('Failed to export to CSV', error);
   }
 };
+
+// PDF Export with jsPDF, jspdf-autotable, and Chart.js
+export interface PDFReportOptions {
+  title: string;
+  subtitle?: string;
+  filters?: Record<string, string>;
+  kpis: { label: string; value: string | number; color?: string }[];
+  passRateTrend?: { labels: string[]; data: number[]; label: string };
+  defectsByPriority?: { labels: string[]; data: number[] };
+  summaryTable: { headers: string[]; rows: (string | number)[][] };
+  theme: ReturnType<typeof getTheme>;
+  footerText?: string;
+}
+
+export async function exportToPDF(options: PDFReportOptions): Promise<void> {
+  const { jsPDF } = await import('jspdf');
+  const autoTable = (await import('jspdf-autotable')).default;
+  const { Chart, registerables } = await import('chart.js');
+  Chart.register(...registerables);
+
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const { theme } = options;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 48;
+  const contentWidth = pageWidth - margin * 2;
+  let yPos = margin;
+
+  const isDark = theme.bg === '#0f172a';
+
+  // Helper to add text
+  const addText = (text: string, x: number, y: number, options: { fontSize?: number; fontStyle?: string; color?: string; align?: 'left' | 'center' | 'right' } = {}) => {
+    doc.setFontSize(options.fontSize || 10);
+    doc.setFont('helvetica', options.fontStyle || 'normal');
+    if (options.color) {
+      doc.setTextColor(options.color);
+    } else {
+      doc.setTextColor(theme.text);
+    }
+    doc.text(text, x, y, { align: options.align || 'left' });
+  };
+
+  // Header
+  doc.setFillColor(theme.blue);
+  doc.rect(0, 0, pageWidth, 72, 'F');
+
+  addText(options.title, margin, 40, { fontSize: 22, fontStyle: 'bold', color: '#FFFFFF', align: 'left' });
+  if (options.subtitle) {
+    addText(options.subtitle, margin, 58, { fontSize: 11, color: 'rgba(255,255,255,0.85)', align: 'left' });
+  }
+
+  // Date range / filters
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  addText(`Generated: ${dateStr}`, pageWidth - margin, 40, { fontSize: 9, color: 'rgba(255,255,255,0.7)', align: 'right' });
+  if (options.filters) {
+    const filterStr = Object.entries(options.filters).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join(' | ');
+    if (filterStr) {
+      addText(`Filters: ${filterStr}`, pageWidth - margin, 54, { fontSize: 8, color: 'rgba(255,255,255,0.6)', align: 'right' });
+    }
+  }
+
+  yPos = 96;
+
+  // KPI Summary Block
+  const kpiBoxHeight = 56;
+  const kpiBoxWidth = (contentWidth - 24) / 4;
+  options.kpis.forEach((kpi, index) => {
+    const x = margin + index * (kpiBoxWidth + 8);
+    doc.setFillColor(isDark ? theme.surface : theme.inputBg);
+    doc.roundedRect(x, yPos, kpiBoxWidth, kpiBoxHeight, 4, 4, 'F');
+    doc.setDrawColor(theme.border);
+    doc.roundedRect(x, yPos, kpiBoxWidth, kpiBoxHeight, 4, 4, 'S');
+
+    const kpiColor = kpi.color || theme.blue;
+    doc.setFillColor(kpiColor);
+    doc.rect(x, yPos, 4, kpiBoxHeight, 'F');
+
+    addText(kpi.label, x + 10, yPos + 16, { fontSize: 8, fontStyle: 'bold', color: theme.muted });
+    addText(String(kpi.value), x + 10, yPos + 40, { fontSize: 18, fontStyle: 'bold', color: kpiColor });
+  });
+  yPos += kpiBoxHeight + 20;
+
+  // Charts section - render to canvas and embed as images
+  const chartWidth = (contentWidth - 16) / 2;
+  const chartHeight = 200;
+  const chartCanvas = document.createElement('canvas');
+  chartCanvas.width = 600;
+  chartCanvas.height = 300;
+  const ctx = chartCanvas.getContext('2d')!;
+
+  if (options.passRateTrend) {
+    // Pass Rate Trend Chart (Line)
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: options.passRateTrend.labels,
+        datasets: [{
+          label: options.passRateTrend.label,
+          data: options.passRateTrend.data,
+          borderColor: theme.blue,
+          backgroundColor: theme.blue + '20',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: theme.blue,
+        }],
+      },
+      options: {
+        responsive: false,
+        plugins: { legend: { display: true, labels: { color: theme.text, font: { size: 10 } } } },
+        scales: {
+          x: { ticks: { color: theme.muted, font: { size: 9 } }, grid: { color: theme.border } },
+          y: { min: 0, max: 100, ticks: { color: theme.muted, font: { size: 9 }, callback: (v) => `${v}%` }, grid: { color: theme.border } },
+        },
+      },
+    });
+
+    const chartImg = chartCanvas.toDataURL('image/png');
+    doc.addImage(chartImg, 'PNG', margin, yPos, chartWidth, chartHeight);
+    ctx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
+  }
+
+  if (options.defectsByPriority) {
+    // Defects by Priority (Doughnut)
+    new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: options.defectsByPriority.labels,
+        datasets: [{
+          data: options.defectsByPriority.data,
+          backgroundColor: [theme.red, theme.amber, theme.blue],
+          borderWidth: 0,
+        }],
+      },
+      options: {
+        responsive: false,
+        plugins: { legend: { position: 'right', labels: { color: theme.text, font: { size: 10 }, usePointStyle: true } } },
+        cutout: '60%',
+      },
+    });
+
+    const chartImg = chartCanvas.toDataURL('image/png');
+    doc.addImage(chartImg, 'PNG', margin + chartWidth + 16, yPos, chartWidth, chartHeight);
+    ctx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
+  }
+
+  yPos += chartHeight + 20;
+
+  // Summary Table
+  addText('Summary Metrics', margin, yPos, { fontSize: 14, fontStyle: 'bold', color: theme.text });
+  yPos += 20;
+
+  autoTable(doc, {
+    head: [options.summaryTable.headers],
+    body: options.summaryTable.rows,
+    startY: yPos,
+    margin: { left: margin, right: margin },
+    styles: {
+      fontSize: 9,
+      cellPadding: 6,
+      textColor: theme.text,
+      lineColor: theme.border,
+      lineWidth: 0.5,
+      font: 'helvetica',
+    },
+    headStyles: {
+      fillColor: theme.blue,
+      textColor: '#FFFFFF',
+      fontStyle: 'bold',
+      fontSize: 9,
+    },
+    alternateRowStyles: {
+      fillColor: isDark ? theme.surface : theme.inputBg,
+    },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 'auto' },
+    },
+    didDrawPage: (data) => {
+      // Footer with page number
+      const pageCount = doc.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        addText(options.footerText || `Page ${i} of ${pageCount} | QX Nexus`, pageWidth / 2, pageHeight - 24, { fontSize: 8, color: theme.muted, align: 'center' });
+      }
+    },
+  });
+
+  doc.save(`${options.title.replace(/\s+/g, '_')}.pdf`);
+}

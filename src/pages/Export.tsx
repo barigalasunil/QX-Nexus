@@ -6,9 +6,12 @@
 import React, { useMemo, useState } from 'react';
 import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, User, WorkingDay } from '@/types';
-import { exportToCSV, exportToExcel, formatDate, generateId } from '@/utils';
-import { BarChart3, Bug, CalendarDays, CheckCircle2, Clock, Download, FileSpreadsheet, FileText, Loader2, Rocket, Settings, XCircle } from 'lucide-react';
+import { exportToCSV, exportToStyledExcel, exportToPDF, generateId } from '@/utils';
+import { BarChart3, Bug, CalendarDays, CheckCircle2, Clock, Download, FileText, Loader2, Rocket, Settings, XCircle, FileOutput } from 'lucide-react';
 import { UserService } from '@/services/user.service';
+import { Chart, registerables } from 'chart.js';
+
+Chart.register(...registerables);
 
 interface ExportProps {
   currentUser: User;
@@ -37,7 +40,8 @@ const STATUS_COLORS: Record<NonNullable<WorkingDay['status']>, string> = {
   WFH: '#2563eb',
   Leave: '#dc2626',
   Holiday: '#7c3aed',
-  Training: '#d97706',
+  'Half Day': '#d97706',
+  'Comp Off': '#d97706',
   Weekend: '#94a3b8',
 };
 
@@ -302,13 +306,61 @@ export function Export({ currentUser, appState, theme, showToast }: ExportProps)
   }
 
   const exportExcel = () => {
-    if (activeReport === 'overall') exportToExcel([{ sheetName: 'Summary', data: summaryRows }, { sheetName: 'Project Breakdown', data: projectBreakdown }, { sheetName: 'Squad Breakdown', data: squadBreakdown }], 'qa_hub_overall_summary');
-    if (activeReport === 'data') exportToExcel([{ sheetName: 'Data Entries', data: cleanRows.data }], 'qa_hub_data_entries');
-    if (activeReport === 'defects') exportToExcel([{ sheetName: 'Defect Log', data: cleanRows.defects }], 'qa_hub_defect_log');
-    if (activeReport === 'releases') exportToExcel([{ sheetName: 'Release Roadmap', data: cleanRows.releases }], 'qa_hub_release_roadmap');
-    if (activeReport === 'timesheet') exportToExcel([{ sheetName: 'Timesheet Summary', data: timesheetSummary }], 'qa_hub_timesheet');
-    if (activeReport === 'weekly') exportToExcel([{ sheetName: 'Weekly Summary', data: summaryRows }], 'qa_hub_weekly_summary');
-    if (activeReport === 'builder') exportToExcel(builderSections().map(section => ({ sheetName: sheetName(section.title), data: section.rows })), 'qa_hub_custom_report');
+    const fileName = `qa_hub_${activeReport}_${filters.year}${filters.month ? `_${filters.month.padStart(2, '0')}` : ''}${filters.squadId ? `_${squadMap.get(filters.squadId)?.replace(/\s+/g, '_')}` : ''}${filters.release ? `_${filters.release.replace(/\s+/g, '_')}` : ''}`;
+
+    if (activeReport === 'overall') {
+      // Build summary sheet data
+      const summarySheetData = [
+        { Metric: 'Report Title', Value: 'Overall Summary' },
+        { Metric: 'Generated', Value: new Date().toLocaleDateString('en-GB') },
+        { Metric: 'Filters Applied', Value: activeFilterCount > 0 ? JSON.stringify(filters) : 'None (All data)' },
+        { Metric: '', Value: '' },
+        { Metric: 'Stories Tested', Value: metrics.Stories },
+        { Metric: 'TC Created', Value: metrics['TC Created'] },
+        { Metric: 'TC Executed', Value: metrics['TC Executed'] },
+        { Metric: 'TC Passed', Value: metrics['TC Passed'] },
+        { Metric: 'TC Failed', Value: metrics['TC Failed'] },
+        { Metric: 'Coverage %', Value: metrics['Coverage%'] },
+        { Metric: 'Pass Rate %', Value: metrics['Pass Rate%'] },
+        { Metric: 'Fail Rate %', Value: metrics['Fail Rate%'] },
+        { Metric: '', Value: '' },
+        { Metric: 'Total Defects', Value: metrics.Defects },
+        { Metric: 'SIT Misses', Value: metrics['SIT Misses'] },
+        { Metric: 'SIT Miss %', Value: metrics['SIT Miss%'] },
+        { Metric: 'P1 Defects', Value: metrics.P1 },
+        { Metric: 'P2 Defects', Value: metrics.P2 },
+        { Metric: 'P3 Defects', Value: metrics.P3 },
+        { Metric: '', Value: '' },
+        { Metric: 'Total Story Points', Value: metrics['Total Story Points (across filtered entries)'] },
+        { Metric: 'UAT Story Points', Value: metrics['UAT Applicable Story Points'] },
+        { Metric: 'UAT Coverage %', Value: metrics['UAT Coverage %'] },
+      ];
+
+      exportToStyledExcel(
+        [
+          { sheetName: 'Summary', data: summarySheetData },
+          { sheetName: 'Project Breakdown', data: projectBreakdown },
+          { sheetName: 'Squad Breakdown', data: squadBreakdown },
+          { sheetName: 'Data Entries', data: cleanRows.data },
+          { sheetName: 'Defect Log', data: cleanRows.defects },
+          { sheetName: 'Release Roadmap', data: cleanRows.releases },
+        ],
+        fileName,
+        theme
+      );
+    } else if (activeReport === 'data') {
+      exportToStyledExcel([{ sheetName: 'Data Entries', data: cleanRows.data }], fileName, theme);
+    } else if (activeReport === 'defects') {
+      exportToStyledExcel([{ sheetName: 'Defect Log', data: cleanRows.defects }], fileName, theme);
+    } else if (activeReport === 'releases') {
+      exportToStyledExcel([{ sheetName: 'Release Roadmap', data: cleanRows.releases }], fileName, theme);
+    } else if (activeReport === 'timesheet') {
+      exportToStyledExcel([{ sheetName: 'Timesheet Summary', data: timesheetSummary }], fileName, theme);
+    } else if (activeReport === 'weekly') {
+      exportToStyledExcel([{ sheetName: 'Weekly Summary', data: summaryRows }], fileName, theme);
+    } else if (activeReport === 'builder') {
+      exportToStyledExcel(builderSections().map(section => ({ sheetName: sheetName(section.title), data: section.rows })), fileName, theme);
+    }
     showToast('Excel report downloaded.', 'success');
   };
 
@@ -318,7 +370,7 @@ export function Export({ currentUser, appState, theme, showToast }: ExportProps)
     showToast('CSV downloaded.', 'success');
   };
 
-  const exportPdf = () => {
+  const exportPdf = async () => {
     if (!canPdf) return;
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -328,6 +380,129 @@ export function Export({ currentUser, appState, theme, showToast }: ExportProps)
     const sections = activeReport === 'builder' ? builderSections() : [{ title: activeCard.name, rows: activeReport === 'overall' ? summaryRows : activeReport === 'defects' ? cleanRows.defects : cleanRows.releases }];
     printWindow.document.write(`<html><head><title>${activeCard.name}</title><style>body{font-family:Arial,sans-serif;padding:28px;color:#0f172a}table{width:100%;border-collapse:collapse;font-size:11px;margin-top:12px}th,td{border:1px solid #cbd5e1;padding:6px;text-align:left}th{background:#f8fafc}</style></head><body><h1>${activeCard.name}</h1>${sections.map(section => `<h2>${section.title}</h2>${renderPrintTable(section.rows)}`).join('')}<script>window.onload=function(){window.print()}</script></body></html>`);
     printWindow.document.close();
+  };
+
+  // New: Export Summary Report as PDF with charts
+  const exportSummaryPdf = async () => {
+    setLoading(true);
+    try {
+      // Compute pass rate trend over the selected period (by month)
+      const trendMonths = 6;
+      const passRateTrendLabels: string[] = [];
+      const passRateTrendData: number[] = [];
+      for (let i = trendMonths - 1; i >= 0; i--) {
+        const d = new Date();
+        d.setMonth(d.getMonth() - i);
+        const monthStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const monthData = appState.dataEntries.filter(e => e.date.startsWith(monthStr) && passesScope(e));
+        const created = monthData.reduce((s, e) => s + (e.tcCreated || 0), 0);
+        const executed = monthData.reduce((s, e) => s + (e.tcExecuted || 0), 0);
+        const passed = monthData.reduce((s, e) => s + (e.tcPassed || 0), 0);
+        passRateTrendLabels.push(monthStr);
+        passRateTrendData.push(executed > 0 ? Math.round((passed / executed) * 100) : 0);
+      }
+
+      // Defects by priority
+      const defectsByPriorityLabels = ['P1', 'P2', 'P3'];
+      const defectsByPriorityData = [
+        defectRows.filter(r => r.Priority === 'P1').length,
+        defectRows.filter(r => r.Priority === 'P2').length,
+        defectRows.filter(r => r.Priority === 'P3').length,
+      ];
+
+      // Summary table data - per squad or per sprint depending on filters
+      const groupBySquad = filters.squadId || (!filters.sprintId && !filters.release);
+      const summaryTableHeaders = groupBySquad ? ['Squad', 'Stories', 'TC Created', 'TC Executed', 'Pass Rate %', 'Defects', 'P1', 'P2', 'P3', 'SIT Misses'] : ['Sprint', 'Stories', 'TC Created', 'TC Executed', 'Pass Rate %', 'Defects', 'P1', 'P2', 'P3', 'SIT Misses'];
+      const summaryTableRows: (string | number)[][] = [];
+
+      if (groupBySquad) {
+        const squads = appState.squads.filter(s => !filters.projectId || s.projectId === filters.projectId);
+        for (const squad of squads) {
+          const squadData = dataRows.filter(r => r.Squad === squad.name);
+          const squadDefects = defectRows.filter(r => r.Squad === squad.name);
+          const created = squadData.reduce((s, r) => s + Number(r.TC_Cr || 0), 0);
+          const executed = squadData.reduce((s, r) => s + Number(r.TC_Ex || 0), 0);
+          const passed = squadData.reduce((s, r) => s + Number(r.TC_Pa || 0), 0);
+          summaryTableRows.push([
+            squad.name,
+            squadData.length,
+            created,
+            executed,
+            executed > 0 ? `${((passed / executed) * 100).toFixed(1)}%` : '0.0%',
+            squadDefects.length,
+            squadDefects.filter(r => r.Priority === 'P1').length,
+            squadDefects.filter(r => r.Priority === 'P2').length,
+            squadDefects.filter(r => r.Priority === 'P3').length,
+            squadDefects.filter(r => r.SIT_Miss === 'YES').length,
+          ]);
+        }
+      } else {
+        const sprints = (appState.sprints || []).sort((a, b) => b.startDate.localeCompare(a.startDate));
+        for (const sprint of sprints) {
+          const sprintData = dataRows.filter(r => r.Sprint_Name === sprint.name);
+          const sprintDefects = defectRows.filter(r => r.Sprint_Name === sprint.name);
+          const created = sprintData.reduce((s, r) => s + Number(r.TC_Cr || 0), 0);
+          const executed = sprintData.reduce((s, r) => s + Number(r.TC_Ex || 0), 0);
+          const passed = sprintData.reduce((s, r) => s + Number(r.TC_Pa || 0), 0);
+          summaryTableRows.push([
+            sprint.name,
+            sprintData.length,
+            created,
+            executed,
+            executed > 0 ? `${((passed / executed) * 100).toFixed(1)}%` : '0.0%',
+            sprintDefects.length,
+            sprintDefects.filter(r => r.Priority === 'P1').length,
+            sprintDefects.filter(r => r.Priority === 'P2').length,
+            sprintDefects.filter(r => r.Priority === 'P3').length,
+            sprintDefects.filter(r => r.SIT_Miss === 'YES').length,
+          ]);
+        }
+      }
+
+      // Filter display
+      const filterDisplay: Record<string, string> = {};
+      if (filters.projectId) filterDisplay['Project'] = projectMap.get(filters.projectId) || filters.projectId;
+      if (filters.squadId) filterDisplay['Squad'] = squadMap.get(filters.squadId) || filters.squadId;
+      if (filters.release) filterDisplay['Release'] = filters.release;
+      if (filters.sprintId) filterDisplay['Sprint'] = (appState.sprints || []).find(s => s.id === filters.sprintId)?.name || filters.sprintId;
+      if (filters.year) filterDisplay['Year'] = filters.year;
+      if (filters.month) filterDisplay['Month'] = MONTHS[Number(filters.month) - 1];
+      if (filters.priority) filterDisplay['Priority'] = filters.priority;
+      if (filters.sitMiss) filterDisplay['SIT Miss'] = filters.sitMiss === 'yes' ? 'Yes' : 'No';
+
+      await exportToPDF({
+        title: 'QX Nexus - Summary Report',
+        subtitle: `${filters.squadId ? squadMap.get(filters.squadId) : 'All Squads'} | ${filters.release || 'All Releases'} | ${filters.year || 'All Years'}${filters.month ? `-${MONTHS[Number(filters.month) - 1]}` : ''}`,
+        filters: filterDisplay,
+        kpis: [
+          { label: 'Stories Tested', value: metrics.Stories, color: theme.blue },
+          { label: 'Pass Rate', value: metrics['Pass Rate%'], color: parseFloat(metrics['Pass Rate%']) >= 80 ? theme.green : parseFloat(metrics['Pass Rate%']) >= 50 ? theme.amber : theme.red },
+          { label: 'Total Defects', value: metrics.Defects, color: theme.orange },
+          { label: 'SIT Misses', value: metrics['SIT Misses'], color: theme.red },
+        ],
+        passRateTrend: {
+          labels: passRateTrendLabels,
+          data: passRateTrendData,
+          label: 'Pass Rate Trend (%)',
+        },
+        defectsByPriority: {
+          labels: defectsByPriorityLabels,
+          data: defectsByPriorityData,
+        },
+        summaryTable: {
+          headers: summaryTableHeaders,
+          rows: summaryTableRows,
+        },
+        theme,
+        footerText: `QX Nexus | Generated ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`,
+      });
+      showToast('Summary Report (PDF) downloaded.', 'success');
+    } catch (error) {
+      console.error('Failed to export PDF', error);
+      showToast('Failed to generate PDF report.', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const renderTable = (rows: Record<string, any>[], limit?: number) => {
@@ -541,10 +716,11 @@ export function Export({ currentUser, appState, theme, showToast }: ExportProps)
   function ExportBar() {
     return (
       <div style={{ position: 'sticky', bottom: 0, margin: '0 -12px -12px', padding: '12px', borderTop: `1px solid ${theme.border}`, backgroundColor: theme.inputBg, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px' }}>
-        <div style={{ marginRight: 'auto', minWidth: '220px' }}><b>{activeCard.name}</b><span style={{ color: theme.muted, fontSize: '12px' }}> · {activeFilterCount || 'No'} filters active · {MONTHS[Number(filters.month || now.getMonth() + 1) - 1]} {filters.year}</span><div style={{ color: theme.muted, fontSize: '11px', marginTop: '3px' }}>{recordCount} records · Excel includes sheets · CSV is a flat file · PDF opens print view</div></div>
+        <div style={{ marginRight: 'auto', minWidth: '220px' }}><b>{activeCard.name}</b><span style={{ color: theme.muted, fontSize: '12px' }}> · {activeFilterCount || 'No'} filters active · {MONTHS[Number(filters.month || now.getMonth() + 1) - 1]} {filters.year}</span><div style={{ color: theme.muted, fontSize: '11px', marginTop: '3px' }}>{recordCount} records · Excel: styled sheets · PDF: visual report</div></div>
         <button disabled={loading} onClick={exportExcel} style={{ ...commonStyles.button(theme, 'success'), opacity: loading ? 0.55 : 1 }}><Download size={15} />Download Excel</button>
         <button disabled={loading} onClick={exportCsv} style={{ ...commonStyles.button(theme, 'primary'), opacity: loading ? 0.55 : 1 }}><Download size={15} />Download CSV</button>
         <button disabled={loading || !canPdf} title={canPdf ? 'Download PDF' : 'PDF not available for this report'} onClick={exportPdf} style={{ ...commonStyles.button(theme, canPdf ? 'danger' : 'secondary'), opacity: loading || !canPdf ? 0.45 : 1 }}><Download size={15} />Download PDF</button>
+        <button disabled={loading} title="Download visual Summary Report with charts" onClick={exportSummaryPdf} style={{ ...commonStyles.button(theme, 'secondary'), opacity: loading ? 0.55 : 1 }}><FileOutput size={15} />Summary Report (PDF)</button>
       </div>
     );
   }
