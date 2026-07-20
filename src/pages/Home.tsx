@@ -4,7 +4,7 @@ import { AppState, User, Recognition, Announcement } from '@/types';
 import { getGreeting, getRelativeTime, getCurrentWeekRange, getNext14DaysRange, generateId } from '@/utils';
 import { Plus, X, ChevronLeft, ChevronRight, Megaphone, Clock, AlertTriangle, Check, AlertCircle, Info } from 'lucide-react';
 import { UserService } from '@/services/user.service';
-import { Announcement } from '@/types';
+import { AppStateService } from '@/services/appState.service';
 
 interface HomeProps {
   currentUser: User;
@@ -370,6 +370,7 @@ export function Home({ currentUser, appState, setAppState, theme, onNavigate, sh
       createdAt: new Date().toISOString(),
     };
 
+    AppStateService.createRecognition(recognition);
     setAppState(prev => ({
       ...prev,
       recognitions: [recognition, ...prev.recognitions],

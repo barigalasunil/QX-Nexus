@@ -9,7 +9,7 @@ import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, Holiday, User } from '@/types';
 import { formatDate, generateId, sanitise } from '@/utils';
 import { Field, Badge } from '@/components/common/Shared';
-import { HolidayRepository } from '@/repositories/holiday';
+import { AppStateService } from '@/services/appState.service';
 
 interface HolidayListProps {
   currentUser: User;
@@ -67,7 +67,7 @@ export function HolidayList({ currentUser, appState, setAppState, showToast, the
       createdBy: currentUser.username,
       createdAt: new Date().toISOString(),
     };
-    await HolidayRepository.create(holiday);
+    await AppStateService.createHoliday(holiday);
     setAppState(previous => ({
       ...previous,
       holidays: [...(previous.holidays || []), holiday],
@@ -88,7 +88,7 @@ export function HolidayList({ currentUser, appState, setAppState, showToast, the
   };
 
   const handleDelete = async (id: string) => {
-    await HolidayRepository.delete(id);
+    await AppStateService.deleteHoliday(id);
     setAppState(previous => ({
       ...previous,
       holidays: (previous.holidays || []).filter(holiday => holiday.id !== id),

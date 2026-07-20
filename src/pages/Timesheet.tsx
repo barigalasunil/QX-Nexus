@@ -7,7 +7,7 @@ import { generateId, exportToCSV, exportToExcel } from '@/utils';
 import { StatCard, ViewOnlyBanner } from '@/components/common/Shared';
 import { StatusLegend } from '@/components/common/StatusLegend';
 import { getStatusBgColor } from '@/components/common/StatusLegend';
-import { TimesheetRepository } from '@/repositories/timesheet';
+import { AppStateService } from '@/services/appState.service';
 import { HolidayList } from '@/components/timesheets/HolidayList';
 import { UserService } from '@/services/user.service';
 import { jsPDF } from 'jspdf';
@@ -210,9 +210,9 @@ export function Timesheet({ currentUser, appState, setAppState, showToast, theme
         ? { ...cur.timesheetEntries[idx], workingDays: next }
         : entries[entries.length - 1];
       if (idx >= 0) {
-        TimesheetRepository.update(entryToPersist);
+        AppStateService.updateTimesheet(entryToPersist);
       } else {
-        TimesheetRepository.create(entryToPersist);
+        AppStateService.createTimesheet(entryToPersist);
       }
 
       const editingOther = targetId !== currentUser.id;

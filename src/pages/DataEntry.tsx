@@ -9,7 +9,7 @@ import { AppState, DataEntry as IDataEntry, User } from '@/types';
 import { generateId, formatDate, sanitise, formatDateTime } from '@/utils';
 import { Field, FilterBar, Badge, ViewOnlyBanner } from '@/components/common/Shared';
 import { Plus, Trash2, HelpCircle, Pencil, ExternalLink, X } from 'lucide-react';
-import { DataEntryRepository } from '@/repositories/dataEntry';
+import { AppStateService } from '@/services/appState.service';
 
 interface DataEntryProps {
   currentUser: User;
@@ -245,7 +245,7 @@ export function DataEntry({ currentUser, appState, setAppState, showToast, theme
       sprintName: sprintObj?.name || '',
     };
 
-    DataEntryRepository.create(newEntry);
+    AppStateService.createDataEntry(newEntry);
     const addedAudit = {
       id: generateId(),
       timestamp: new Date().toISOString(),
@@ -350,7 +350,7 @@ export function DataEntry({ currentUser, appState, setAppState, showToast, theme
       sprintId: editForm.sprintId || '',
       sprintName: editSprintObj?.name || '',
     };
-    DataEntryRepository.update(updatedEntry);
+    AppStateService.updateDataEntry(updatedEntry);
     const editAudit = {
       id: generateId(),
       timestamp: new Date().toISOString(),
@@ -378,7 +378,7 @@ export function DataEntry({ currentUser, appState, setAppState, showToast, theme
   const handleConfirmDeleteEntry = () => {
     const id = confirmDeleteEntryId;
     if (!id) return;
-    DataEntryRepository.delete(id);
+    AppStateService.deleteDataEntry(id);
     setAppState((prev) => ({
       ...prev,
       dataEntries: prev.dataEntries.filter((e) => e.id !== id)

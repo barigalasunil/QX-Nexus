@@ -14,6 +14,7 @@ import { BulkImport } from '@/components/users/BulkImport';
 import { ProjectsManager } from '@/components/projects/ProjectsManager';
 import { SquadsManager } from '@/components/squads/SquadsManager';
 import { UserService } from '@/services/user.service';
+import { AppStateService } from '@/services/appState.service';
 import { useUsers } from '@/hooks/useUsers';
 import { useReferenceData } from '@/hooks/useReferenceData';
 import { useSquads } from '@/hooks/useSquads';
@@ -363,6 +364,17 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
 
     await UserService.createUser(currentUser, newUser, plainPassword);
 
+    await AppStateService.appendAuditEntry({
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      username: currentUser.username,
+      role: currentUser.role,
+      action: 'CREATE_USER',
+      details: `Created user ${newUser.username}`,
+      ipHint: 'Browser session',
+    });
+
     setAppState((prev) => ({
       ...prev,
       userNotifications: newUser.reportsTo ? {
@@ -437,6 +449,18 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       type: 'info',
       link: 'profile',
     };
+
+    await AppStateService.appendAuditEntry({
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      username: currentUser.username,
+      role: currentUser.role,
+      action: 'PERMISSION_CHANGE',
+      details: `Updated permissions for ${target.username}`,
+      ipHint: 'Browser session',
+    });
+
     setAppState((prev) => ({
       ...prev,
       userNotifications: {
@@ -462,6 +486,17 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
   const handleBaseOfficeChange = async (userId: string, baseOffice: User['baseOffice']) => {
     const target = UserService.getUserById(userId);
     await UserService.updateBaseOffice(currentUser, userId, baseOffice || 'Bengaluru');
+
+    await AppStateService.appendAuditEntry({
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      username: currentUser.username,
+      role: currentUser.role,
+      action: 'PERMISSION_CHANGE',
+      details: `Updated base office for ${target?.username || userId} to ${baseOffice || 'Bengaluru'}`,
+      ipHint: 'Browser session',
+    });
 
     setAppState((prev) => ({
       ...prev,
@@ -509,6 +544,17 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
         });
       }
     }
+
+    await AppStateService.appendAuditEntry({
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      username: currentUser.username,
+      role: currentUser.role,
+      action: 'PERMISSION_CHANGE',
+      details: `Updated reporting manager for ${target.username}`,
+      ipHint: 'Browser session',
+    });
 
     setAppState((prev) => ({
       ...prev,
@@ -564,6 +610,18 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
       type: 'warning',
       link: 'profile',
     };
+
+    await AppStateService.appendAuditEntry({
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      username: currentUser.username,
+      role: currentUser.role,
+      action: 'RESET_PASSWORD',
+      details: `Reset password for ${target.username}`,
+      ipHint: 'Browser session',
+    });
+
     setAppState((prev) => ({
       ...prev,
       userNotifications: {
@@ -617,6 +675,17 @@ export function Settings({ currentUser, appState, setAppState, showToast, theme,
           });
         }
         await UserService.deleteUser(currentUser, userId);
+
+        await AppStateService.appendAuditEntry({
+          id: generateId(),
+          timestamp: new Date().toISOString(),
+          userId: currentUser.id,
+          username: currentUser.username,
+          role: currentUser.role,
+          action: 'DELETE_USER',
+          details: `Deleted user ${target.username}`,
+          ipHint: 'Browser session',
+        });
 
         setAppState((prev) => ({
           ...prev,

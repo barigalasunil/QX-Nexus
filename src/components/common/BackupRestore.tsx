@@ -8,6 +8,8 @@ import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, User, AuditLogEntry, BackupMetadata } from '@/types';
 import { generateId } from '@/utils';
 import { Download, Upload, HardDrive, Clock, Archive, RefreshCw, Trash2, AlertTriangle, Check, Database } from 'lucide-react';
+import { AppStateService } from '@/services/appState.service';
+import { isSupabaseConfigured } from '@/lib/supabase';
 
 const APP_NAME = "QX Nexus";
 
@@ -64,6 +66,9 @@ export function BackupRestore({ currentUser, appState, setAppState, showToast, t
       ipHint: 'Browser session',
     } as AuditLogEntry;
 
+    AppStateService.createBackupMetadata(backupEntry);
+    AppStateService.appendAuditEntry(auditEntry);
+
     setAppState((prev) => ({
       ...prev,
       backupMetadata: [...prev.backupMetadata, backupEntry].slice(-50),
@@ -82,6 +87,7 @@ export function BackupRestore({ currentUser, appState, setAppState, showToast, t
   };
 
   const handleDeleteBackup = (id: string) => {
+    AppStateService.deleteBackupMetadata(id);
     setAppState((prev) => ({
       ...prev,
       backupMetadata: prev.backupMetadata.filter((b) => b.id !== id),
@@ -94,6 +100,11 @@ export function BackupRestore({ currentUser, appState, setAppState, showToast, t
   };
 
   const handleRestore = async () => {
+    if (isSupabaseConfigured()) {
+      showToast('Backup restore is not yet supported in Supabase mode.', 'warning');
+      return;
+    }
+
     if (!selectedFile) return;
     const file = selectedFile as File;
 

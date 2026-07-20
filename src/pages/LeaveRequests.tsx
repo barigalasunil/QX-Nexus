@@ -9,6 +9,7 @@ import { AppState, User, LeaveRequest, WorkingDay, AuditLogEntry } from '@/types
 import { generateId, sanitise, getDaysInMonth } from '@/utils';
 import { CalendarCheck, CheckCircle, XCircle, Clock, Plus, Filter, Send, ThumbsUp, ThumbsDown, MessageSquare, User as UserIcon } from 'lucide-react';
 import { UserService } from '@/services/user.service';
+import { AppStateService } from '@/services/appState.service';
 
 interface LeaveRequestsProps {
   currentUser: User;
@@ -101,6 +102,7 @@ export function LeaveRequests({ currentUser, appState, setAppState, showToast, t
       rejectionReason: null,
     };
 
+    AppStateService.createLeaveRequest(leaveRequest);
     setAppState(prev => ({
       ...prev,
       leaveRequests: [...(prev.leaveRequests || []), leaveRequest],
@@ -129,6 +131,15 @@ export function LeaveRequests({ currentUser, appState, setAppState, showToast, t
       monthsTouched.add(getMonthKey(current.toISOString().slice(0, 10)));
       current.setDate(current.getDate() + 1);
     }
+
+    // Persist leave approval
+    AppStateService.updateLeaveRequestStatus(request.id, 'approved', {
+      approverId: currentUser.id,
+      approverName: currentUser.username,
+      approvedAt: now,
+      reviewedBy: currentUser.username,
+      rejectionReason: null,
+    });
 
     setAppState(prev => {
       const updatedRequests = (prev.leaveRequests || []).map(lr =>
@@ -225,6 +236,15 @@ export function LeaveRequests({ currentUser, appState, setAppState, showToast, t
       return;
     }
     const now = new Date().toISOString();
+
+    // Persist leave rejection
+    AppStateService.updateLeaveRequestStatus(request.id, 'rejected', {
+      rejectionReason: sanitise(reason),
+      reviewedBy: currentUser.username,
+      approverId: currentUser.id,
+      approverName: currentUser.username,
+      approvedAt: null,
+    });
 
     setAppState(prev => {
       const updatedRequests = (prev.leaveRequests || []).map(lr =>

@@ -5,6 +5,7 @@ import { generateId, hashPassword, sanitise } from '@/utils';
 import { HolidayRepository } from '@/repositories/holiday';
 import { Upload, FileSpreadsheet, AlertTriangle, Check, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { UserService } from '@/services/user.service';
+import { AppStateService } from '@/services/appState.service';
 
 interface BulkImportProps {
   currentUser: User;
@@ -365,6 +366,7 @@ export function BulkImport({ currentUser, appState, setAppState, showToast, them
           });
 
           if (newEntries.length > 0) {
+            await Promise.all(newEntries.map(e => AppStateService.createDataEntry(e)));
             setAppState(prev => ({
               ...prev,
               dataEntries: [...prev.dataEntries, ...newEntries],
@@ -427,6 +429,7 @@ export function BulkImport({ currentUser, appState, setAppState, showToast, them
           });
 
           if (newDefects.length > 0) {
+            await Promise.all(newDefects.map(d => AppStateService.createDefect(d)));
             setAppState(prev => ({
               ...prev,
               defects: [...prev.defects, ...newDefects],
@@ -487,6 +490,7 @@ export function BulkImport({ currentUser, appState, setAppState, showToast, them
             for (const holiday of newHolidays) {
               await HolidayRepository.create(holiday);
             }
+            await Promise.all(newHolidays.map(h => AppStateService.createHoliday(h)));
             setAppState(prev => ({
               ...prev,
               holidays: [...(prev.holidays || []), ...newHolidays],
@@ -561,18 +565,20 @@ export function BulkImport({ currentUser, appState, setAppState, showToast, them
 
           if (newUsers.length > 0) {
             await UserService.refresh();
+            const userAuditEntry: AuditLogEntry = {
+              id: generateId(),
+              timestamp: new Date().toISOString(),
+              userId: currentUser.id,
+              username: currentUser.username,
+              role: currentUser.role,
+              action: 'CREATE_USER',
+              details: `Bulk imported ${newUsers.length} users`,
+              ipHint: 'Browser session',
+            };
+            AppStateService.appendAuditEntry(userAuditEntry);
             setAppState(prev => ({
               ...prev,
-              auditLog: [{
-                id: generateId(),
-                timestamp: new Date().toISOString(),
-                userId: currentUser.id,
-                username: currentUser.username,
-                role: currentUser.role,
-                action: 'CREATE_USER',
-                details: `Bulk imported ${newUsers.length} users`,
-                ipHint: 'Browser session',
-              }, ...(prev.auditLog || [])].slice(0, 500),
+              auditLog: [userAuditEntry, ...(prev.auditLog || [])].slice(0, 500),
             }));
           }
           break;

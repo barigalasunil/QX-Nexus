@@ -8,9 +8,7 @@ import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, ReleaseEntry, Sprint, User } from '@/types';
 import { formatDate, formatDateTime, generateId, sanitise } from '@/utils';
 import { Field, ViewOnlyBanner } from '@/components/common/Shared';
-import { ReleaseEntryRepository } from '@/repositories/releaseEntry';
-import { ReleaseRepository } from '@/repositories/release';
-import { SprintRepository } from '@/repositories/sprint';
+import { AppStateService } from '@/services/appState.service';
 import { Edit3, HelpCircle, Trash2 } from 'lucide-react';
 
 interface CyclesProps {
@@ -183,9 +181,9 @@ export function Releases({ currentUser, appState, setAppState, showToast, theme,
     const releaseNameExists = (appState.releaseNames || []).some(release => release.name.toLowerCase() === cleanReleaseName.toLowerCase());
     const releaseName = { id: generateId(), name: cleanReleaseName };
     if (!releaseNameExists) {
-      await ReleaseRepository.create(releaseName);
+      await AppStateService.createRelease(releaseName);
     }
-    await ReleaseEntryRepository.create(entry);
+    await AppStateService.createReleaseEntry(entry);
     setAppState(previous => ({
       ...previous,
       releaseEntries: [...previous.releaseEntries, entry],
@@ -225,7 +223,7 @@ export function Releases({ currentUser, appState, setAppState, showToast, theme,
   const handleConfirmDeleteRelease = () => {
     const id = confirmDeleteReleaseId;
     if (!id) return;
-    ReleaseEntryRepository.delete(id);
+    AppStateService.deleteReleaseEntry(id);
     setAppState(previous => ({ ...previous, releaseEntries: previous.releaseEntries.filter(entry => entry.id !== id) }));
     showToast('Release entry deleted.', 'success');
     setConfirmDeleteReleaseId(null);
@@ -304,10 +302,10 @@ export function Releases({ currentUser, appState, setAppState, showToast, theme,
     const releaseNameExists = (appState.releaseNames || []).some(release => release.name === updated.releaseName);
     const releaseName = { id: generateId(), name: updated.releaseName };
     if (!releaseNameExists) {
-      await ReleaseRepository.create(releaseName);
+      await AppStateService.createRelease(releaseName);
     }
 
-    await ReleaseEntryRepository.update(updated);
+    await AppStateService.updateReleaseEntry(updated);
     setAppState(previous => ({
       ...previous,
       releaseEntries: previous.releaseEntries.map(entry => entry.id === updated.id ? updated : entry),
@@ -342,7 +340,7 @@ export function Releases({ currentUser, appState, setAppState, showToast, theme,
       startDate: sprintForm.startDate,
       endDate: sprintForm.endDate,
     };
-    await SprintRepository.create(newSprint);
+    await AppStateService.createSprint(newSprint);
     setAppState(previous => ({
       ...previous,
       sprints: [...(previous.sprints || []), newSprint],
@@ -358,7 +356,7 @@ export function Releases({ currentUser, appState, setAppState, showToast, theme,
   const handleConfirmDeleteSprint = async () => {
     const id = confirmDeleteSprintId;
     if (!id) return;
-    await SprintRepository.delete(id);
+    await AppStateService.deleteSprint(id);
     setAppState(previous => ({
       ...previous,
       sprints: (previous.sprints || []).filter(s => s.id !== id),

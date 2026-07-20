@@ -10,6 +10,7 @@ import { generateId, formatDate, sanitise } from '@/utils';
 import { Field, FilterBar, Badge, ViewOnlyBanner } from '@/components/common/Shared';
 import { Plus, Trash2, HelpCircle, ExternalLink } from 'lucide-react';
 import { UserService } from '@/services/user.service';
+import { AppStateService } from '@/services/appState.service';
 
 interface DefectsProps {
   currentUser: User;
@@ -210,6 +211,7 @@ export function Defects({ currentUser, appState, setAppState, showToast, theme, 
       sprintName: sprintObj?.name || '',
     };
 
+    AppStateService.createDefect(newDefect);
     setAppState((prev) => {
       const allUsers = UserService.getUsersSync();
       const notifyUsers = allUsers.filter(user => (user.role === 'lead' && (user.squadId === newDefect.squadId || user.projectId === newDefect.projectId)) || user.role === 'admin' && user.projectId === newDefect.projectId);
@@ -279,6 +281,7 @@ export function Defects({ currentUser, appState, setAppState, showToast, theme, 
   const handleConfirmDeleteDefect = () => {
     const id = confirmDeleteDefectId;
     if (!id) return;
+    AppStateService.deleteDefect(id);
     setAppState((prev) => ({
       ...prev,
       defects: prev.defects.filter((d) => d.id !== id),
@@ -315,6 +318,11 @@ export function Defects({ currentUser, appState, setAppState, showToast, theme, 
       return;
     }
     const changedAt = new Date().toISOString();
+    AppStateService.updateDefect(defect.id, {
+      status: statusEdit.status,
+      resolvedDate: (statusEdit.status === 'Resolved' || statusEdit.status === 'Closed') ? statusEdit.resolvedDate : null,
+      statusHistory: [...(defect.statusHistory || []), { status: statusEdit.status, changedBy: currentUser.username, changedAt }],
+    });
     setAppState(previous => ({
       ...previous,
       defects: previous.defects.map(item => item.id === defect.id ? {

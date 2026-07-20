@@ -79,7 +79,9 @@ export default function App() {
   const onNavigate = useCallback((tab: string) => { setCurrentTab(tab); }, []);
 
   // Application database state loaded through the app-state service.
-  const [appState, setAppState] = useState<AppState>(() => AppStateService.loadAppState(INITIAL_APP_STATE));
+  const [appState, setAppState] = useState<AppState>(INITIAL_APP_STATE);
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
 
   const login = useCallback(async (email: string, password: string): Promise<User> => {
     return authLogin(email, password);
@@ -92,17 +94,26 @@ export default function App() {
   const previousNotificationStateRef = React.useRef<AppState | null>(null);
   const notificationUpdateRef = React.useRef(false);
   const [migrationReady, setMigrationReady] = useState(false);
-  useEffect(() => {
-    AppStateService.saveAppState(appState, { clearLegacy: true });
-    setMigrationReady(true);
-    UserService.getUsers();
-  }, []);
 
+  // Phase 3: Load data from repositories on mount
   useEffect(() => {
-    if (migrationReady) {
-      AppStateService.saveAppState(appState);
-    }
-  }, [appState, migrationReady]);
+    let cancelled = false;
+    AppStateService.loadAllEntities()
+      .then(state => {
+        if (cancelled) return;
+        setAppState(state);
+        setDataLoaded(true);
+        setMigrationReady(true);
+        UserService.getUsers();
+      })
+      .catch(err => {
+        if (cancelled) return;
+        setDataError(err instanceof Error ? err.message : 'Failed to load application data.');
+        setDataLoaded(true);
+        setMigrationReady(true);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!migrationReady) return;
@@ -159,7 +170,10 @@ export default function App() {
   useEffect(() => {
     if (document.querySelector('meta[http-equiv="Content-Security-Policy"]')) return;
     const meta = document.createElement('meta');
-    const connectSources = "'self'";
+    const supabaseHosts = import.meta.env.VITE_SUPABASE_URL
+      ? ` ${new URL(import.meta.env.VITE_SUPABASE_URL).origin} wss://${new URL(import.meta.env.VITE_SUPABASE_URL).host}`
+      : '';
+    const connectSources = `'self'${supabaseHosts}`;
     meta.httpEquiv = 'Content-Security-Policy';
     meta.content = `default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; connect-src ${connectSources};`;
     document.head.appendChild(meta);
@@ -525,6 +539,32 @@ export default function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [currentUser?.id]);
+
+  // Phase 3: Show loading state while data is being fetched
+  if (!dataLoaded) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: theme.bg, color: theme.text, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div className="spin" style={{ width: '36px', height: '36px', border: `3px solid ${theme.border}`, borderTopColor: theme.blue, borderRadius: '50%', margin: '0 auto 16px' }} />
+          <div style={{ fontSize: '14px', color: theme.muted }}>Loading application data...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Phase 3: Show error state if data fetch failed
+  if (dataError) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: theme.bg, color: theme.text, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+        <div style={{ textAlign: 'center', maxWidth: '480px', padding: '20px' }}>
+          <div style={{ fontSize: '40px', marginBottom: '12px' }}>⚠️</div>
+          <h2 style={{ margin: '0 0 8px', fontSize: '18px', color: theme.red }}>Failed to Load Data</h2>
+          <p style={{ color: theme.muted, fontSize: '13px', margin: '0 0 16px' }}>{dataError}</p>
+          <button onClick={() => window.location.reload()} style={{ ...commonStyles.button(theme, 'primary') }}>Retry</button>
+        </div>
+      </div>
+    );
+  }
 
   // If user is not authenticated, render Login Page
   if (!currentUser) {

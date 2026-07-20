@@ -12,3 +12,5 @@ playwright-report/
 .env.development
 .vscode/settings.json
 !.env.example
+
+.env.seed

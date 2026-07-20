@@ -9,6 +9,7 @@ import { ThemeTokens, commonStyles } from '@/styles/theme';
 import { AppState, User, Announcement, AuditLogEntry } from '@/types';
 import { generateId, sanitise } from '@/utils';
 import { Badge } from '@/components/common/Shared';
+import { AppStateService } from '@/services/appState.service';
 
 interface AnnouncementsProps {
   currentUser: User;
@@ -112,6 +113,7 @@ export function Announcements({ currentUser, appState, setAppState, showToast, t
       projectId: form.projectId || null,
     };
 
+    AppStateService.createAnnouncement(announcement);
     setAppState(previous => ({
       ...previous,
       announcements: [...(previous.announcements || []), announcement],
@@ -147,6 +149,7 @@ export function Announcements({ currentUser, appState, setAppState, showToast, t
   const handleConfirmDelete = () => {
     const id = confirmDeleteId;
     if (!id) return;
+    AppStateService.deleteAnnouncement(id);
     setAppState(previous => ({
       ...previous,
       announcements: (previous.announcements || []).filter(a => a.id !== id),

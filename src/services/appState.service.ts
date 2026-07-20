@@ -4,13 +4,34 @@
  */
 
 // App state service for loading, migrating, and saving persisted QX Nexus data.
+// When Supabase is configured, entity CRUD routes through Supabase repositories.
+// When not configured, falls back to the legacy localStorage blob.
+//
 // Users are managed entirely through localStorage via UserService.
 // AppState no longer contains a `users` array; notifications are stored separately
 // in `userNotifications` keyed by user ID.
 
-import { AppState } from '@/types';
+import {
+  AppState,
+  Announcement,
+  AuditLogEntry,
+  BackupMetadata,
+  CustomField,
+  DataEntry,
+  Defect,
+  Holiday,
+  LeaveRequest,
+  Project,
+  Recognition,
+  Release,
+  ReleaseEntry,
+  Sprint,
+  TimesheetEntry,
+  UserNotification,
+} from '@/types';
 import { generateId } from '@/utils';
 import { RepositoryFactory } from '@/repositories/RepositoryFactory';
+import { isSupabaseConfigured } from '@/lib/supabase';
 
 type SaveOptions = {
   clearLegacy?: boolean;
@@ -235,5 +256,267 @@ export const AppStateService = {
 
   clearAppState() {
     RepositoryFactory.getRepository().clearAppState();
+  },
+
+  // ---------------------------------------------------------------------------
+  // Entity CRUD — routes through RepositoryFactory (Supabase or local repos)
+  // ---------------------------------------------------------------------------
+
+  // Projects
+  async fetchProjects() {
+    const repo = await RepositoryFactory.getProjectRepository();
+    return repo.fetchProjects();
+  },
+  async createProject(project: Omit<Project, 'id' | 'created_at' | 'updated_at'>) {
+    const repo = await RepositoryFactory.getProjectRepository();
+    return repo.createProject(project);
+  },
+
+  // Squads
+  async fetchSquads() {
+    const repo = await RepositoryFactory.getSquadRepository();
+    return repo.fetchSquads();
+  },
+
+  // DataEntries
+  async fetchDataEntries(): Promise<DataEntry[]> {
+    const repo = await RepositoryFactory.getDataEntryRepository();
+    return repo.getAll();
+  },
+  async createDataEntry(entry: DataEntry): Promise<DataEntry> {
+    const repo = await RepositoryFactory.getDataEntryRepository();
+    return repo.create(entry);
+  },
+  async updateDataEntry(entry: DataEntry): Promise<DataEntry> {
+    const repo = await RepositoryFactory.getDataEntryRepository();
+    return repo.update(entry);
+  },
+  async deleteDataEntry(id: string): Promise<void> {
+    const repo = await RepositoryFactory.getDataEntryRepository();
+    return repo.delete(id);
+  },
+
+  // Defects
+  async fetchDefects(): Promise<Defect[]> {
+    const repo = await RepositoryFactory.getDefectRepository();
+    return repo.getAll();
+  },
+  async createDefect(defect: Defect): Promise<Defect> {
+    const repo = await RepositoryFactory.getDefectRepository();
+    return repo.create(defect);
+  },
+  async updateDefect(id: string, defect: Partial<Defect>): Promise<Defect> {
+    const repo = await RepositoryFactory.getDefectRepository();
+    return repo.update(id, defect);
+  },
+  async deleteDefect(id: string): Promise<void> {
+    const repo = await RepositoryFactory.getDefectRepository();
+    return repo.delete(id);
+  },
+
+  // ReleaseEntries
+  async fetchReleaseEntries(): Promise<ReleaseEntry[]> {
+    const repo = await RepositoryFactory.getReleaseEntryRepository();
+    return repo.getAll();
+  },
+  async createReleaseEntry(entry: ReleaseEntry): Promise<ReleaseEntry> {
+    const repo = await RepositoryFactory.getReleaseEntryRepository();
+    return repo.create(entry);
+  },
+  async updateReleaseEntry(entry: ReleaseEntry): Promise<ReleaseEntry> {
+    const repo = await RepositoryFactory.getReleaseEntryRepository();
+    return repo.update(entry);
+  },
+  async deleteReleaseEntry(id: string): Promise<void> {
+    const repo = await RepositoryFactory.getReleaseEntryRepository();
+    return repo.delete(id);
+  },
+
+  // Releases
+  async fetchReleases(): Promise<Release[]> {
+    const repo = await RepositoryFactory.getReleaseRepository();
+    return repo.getAll();
+  },
+  async createRelease(release: Release): Promise<Release> {
+    const repo = await RepositoryFactory.getReleaseRepository();
+    return repo.create(release);
+  },
+
+  // Sprints
+  async fetchSprints(): Promise<Sprint[]> {
+    const repo = await RepositoryFactory.getSprintRepository();
+    return repo.getAll();
+  },
+  async createSprint(sprint: Sprint): Promise<Sprint> {
+    const repo = await RepositoryFactory.getSprintRepository();
+    return repo.create(sprint);
+  },
+  async deleteSprint(id: string): Promise<void> {
+    const repo = await RepositoryFactory.getSprintRepository();
+    return repo.delete(id);
+  },
+
+  // Timesheets
+  async fetchTimesheets(): Promise<TimesheetEntry[]> {
+    const repo = await RepositoryFactory.getTimesheetRepository();
+    return repo.getAll();
+  },
+  async createTimesheet(entry: TimesheetEntry): Promise<TimesheetEntry> {
+    const repo = await RepositoryFactory.getTimesheetRepository();
+    return repo.create(entry);
+  },
+  async updateTimesheet(entry: TimesheetEntry): Promise<TimesheetEntry> {
+    const repo = await RepositoryFactory.getTimesheetRepository();
+    return repo.update(entry);
+  },
+
+  // Holidays
+  async fetchHolidays(): Promise<Holiday[]> {
+    const repo = await RepositoryFactory.getHolidayRepository();
+    return repo.getAll();
+  },
+  async createHoliday(holiday: Holiday): Promise<Holiday> {
+    const repo = await RepositoryFactory.getHolidayRepository();
+    return repo.create(holiday);
+  },
+  async deleteHoliday(id: string): Promise<void> {
+    const repo = await RepositoryFactory.getHolidayRepository();
+    return repo.delete(id);
+  },
+
+  // Announcements
+  async fetchAnnouncements(): Promise<Announcement[]> {
+    const repo = await RepositoryFactory.getAnnouncementRepository();
+    return repo.getAll();
+  },
+  async createAnnouncement(announcement: Announcement): Promise<Announcement> {
+    const repo = await RepositoryFactory.getAnnouncementRepository();
+    return repo.create(announcement);
+  },
+  async deleteAnnouncement(id: string): Promise<void> {
+    const repo = await RepositoryFactory.getAnnouncementRepository();
+    return repo.delete(id);
+  },
+
+  // LeaveRequests
+  async fetchLeaveRequests(): Promise<LeaveRequest[]> {
+    const repo = await RepositoryFactory.getLeaveRepository();
+    return repo.getAll();
+  },
+  async createLeaveRequest(lr: LeaveRequest): Promise<LeaveRequest> {
+    const repo = await RepositoryFactory.getLeaveRepository();
+    return repo.create(lr);
+  },
+  async updateLeaveRequestStatus(
+    id: string,
+    status: LeaveRequest['status'],
+    updates?: Partial<Omit<LeaveRequest, 'id' | 'status'>>,
+  ): Promise<LeaveRequest | null> {
+    const repo = await RepositoryFactory.getLeaveRepository();
+    return repo.updateStatus(id, status, updates);
+  },
+
+  // AuditLog
+  async appendAuditEntry(entry: AuditLogEntry): Promise<AuditLogEntry> {
+    const repo = await RepositoryFactory.getAuditRepository();
+    return repo.add(entry);
+  },
+
+  // Notifications
+  async addNotification(userId: string, notification: UserNotification): Promise<UserNotification | null> {
+    const repo = await RepositoryFactory.getNotificationRepository();
+    return repo.add(userId, notification);
+  },
+  async markNotificationRead(userId: string, notificationId: string): Promise<void> {
+    const repo = await RepositoryFactory.getNotificationRepository();
+    return repo.markRead(userId, notificationId);
+  },
+  async markAllNotificationsRead(userId: string): Promise<void> {
+    const repo = await RepositoryFactory.getNotificationRepository();
+    return repo.markAllRead(userId);
+  },
+  async deleteNotification(userId: string, notificationId: string): Promise<void> {
+    const repo = await RepositoryFactory.getNotificationRepository();
+    return repo.delete(userId, notificationId);
+  },
+
+  // BackupMetadata
+  async fetchBackupMetadata(): Promise<BackupMetadata[]> {
+    const repo = await RepositoryFactory.getBackupRepository();
+    return repo.getMetadata();
+  },
+  async createBackupMetadata(metadata: BackupMetadata): Promise<BackupMetadata> {
+    const repo = await RepositoryFactory.getBackupRepository();
+    return repo.saveMetadata(metadata);
+  },
+  async deleteBackupMetadata(id: string): Promise<void> {
+    const repo = await RepositoryFactory.getBackupRepository();
+    return repo.deleteMetadata(id);
+  },
+
+  // Recognitions
+  async fetchRecognitions(): Promise<Recognition[]> {
+    const repo = await RepositoryFactory.getRecognitionRepository();
+    return repo.getAll();
+  },
+  async createRecognition(recognition: Recognition): Promise<Recognition> {
+    const repo = await RepositoryFactory.getRecognitionRepository();
+    return repo.create(recognition);
+  },
+
+  // ---------------------------------------------------------------------------
+  // Bulk load — fetches all entities from repositories (used for initial load)
+  // ---------------------------------------------------------------------------
+  async loadAllEntities(): Promise<AppState> {
+    if (!isSupabaseConfigured()) {
+      // localStorage: fall back to existing blob load
+      return this.loadAppState({
+        projects: [], squads: [], releases: [], releaseNames: [],
+        dataEntries: [], defects: [], releaseEntries: [], timesheetEntries: [],
+        holidays: [], customFields: [], auditLog: [], notifications: [],
+        userNotifications: {}, announcements: [], leaveRequests: [],
+        backupMetadata: [], recognitions: [], sprints: [],
+      });
+    }
+
+    const results = await Promise.allSettled([
+      this.fetchProjects(),
+      this.fetchSquads(),
+      this.fetchDataEntries(),
+      this.fetchDefects(),
+      this.fetchReleaseEntries(),
+      this.fetchReleases(),
+      this.fetchSprints(),
+      this.fetchTimesheets(),
+      this.fetchHolidays(),
+      this.fetchAnnouncements(),
+      this.fetchLeaveRequests(),
+      this.fetchBackupMetadata(),
+      this.fetchRecognitions(),
+    ]);
+
+    const ok = <T>(r: PromiseSettledResult<T>, fallback: T): T =>
+      r.status === 'fulfilled' ? r.value : fallback;
+
+    return {
+      projects: ok(results[0], []),
+      squads: ok(results[1], []),
+      dataEntries: ok(results[2], []),
+      defects: ok(results[3], []),
+      releaseEntries: ok(results[4], []),
+      releases: ok(results[5], []),
+      sprints: ok(results[6], []),
+      timesheetEntries: ok(results[7], []),
+      holidays: ok(results[8], []),
+      announcements: ok(results[9], []),
+      leaveRequests: ok(results[10], []),
+      backupMetadata: ok(results[11], []),
+      recognitions: ok(results[12], []),
+      releaseNames: [],
+      customFields: [],
+      auditLog: [],
+      notifications: [],
+      userNotifications: {},
+    };
   },
 };
