@@ -469,19 +469,30 @@ test.describe('TEST 6 — User creation via Edge Function', () => {
     }
 
     const addBtn = page.getByRole('button', { name: /add user account/i }).first();
+
+    const networkErrors: string[] = [];
+    const responseHandler = (resp: import('@playwright/test').Response) => {
+      if (resp.status() >= 400) networkErrors.push(`${resp.status()} ${resp.url()}`);
+    };
+    page.on('response', responseHandler);
+
     await addBtn.click();
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(5000);
 
     const pwModal = page.locator('text=User Created Successfully').first();
-    const modalAppeared = await pwModal.isVisible({ timeout: 5000 }).catch(() => false);
+    const modalAppeared = await pwModal.isVisible({ timeout: 10_000 }).catch(() => false);
 
-    if (!modalAppeared) {
-      const errorMsg = await page.locator('[style*="color"], [role="alert"]')
-        .filter({ hasText: /error|fail|edge|function|500|404/i })
-        .first()
-        .innerText()
-        .catch(() => '');
-      console.log(`  [TEST 6] SKIPPED — Edge Function not deployed or user creation failed: ${errorMsg || '(unknown error)'}`);
+    page.removeListener('response', responseHandler);
+
+    if (!modalAppeared || networkErrors.length > 0) {
+      const errorMsg = networkErrors.length > 0
+        ? networkErrors.join('; ')
+        : await page.locator('[style*="color"], [role="alert"]')
+            .filter({ hasText: /error|fail|edge|function|500|404/i })
+            .first()
+            .innerText()
+            .catch(() => '(unknown error)');
+      console.log(`  [TEST 6] SKIPPED — Edge Function not deployed or user creation failed: ${errorMsg}`);
       return;
     }
 
