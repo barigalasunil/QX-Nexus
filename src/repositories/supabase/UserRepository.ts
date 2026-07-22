@@ -3,6 +3,15 @@ import { User, UserPermissions } from '@/types';
 import { IUserRepository } from '@/repositories/user/IUserRepository';
 import { getPermissionsForRole } from '@/utils';
 
+// Module-level store for the one-time generated password returned by the Edge Function.
+let _generatedPassword: string | null = null;
+
+export function popGeneratedPassword(): string | null {
+  const pw = _generatedPassword;
+  _generatedPassword = null;
+  return pw;
+}
+
 function rowToUser(row: Record<string, unknown>): User {
   return {
     id: row.id as string,
@@ -23,6 +32,7 @@ function rowToUser(row: Record<string, unknown>): User {
     loginHistory: row.login_history as User['loginHistory'],
     birthday: row.birthday as string | null,
     loginCountWithoutBirthday: row.login_count_without_birthday as number,
+    accessibleSquads: (row.accessible_squads as string[]) || [],
     reportsTo: row.reports_to as string | null,
     directReports: row.direct_reports as string[] | undefined,
     jobTitle: row.job_title as string | undefined,
@@ -49,6 +59,7 @@ function userToRow(user: User): Record<string, unknown> {
     login_history: user.loginHistory,
     birthday: user.birthday,
     login_count_without_birthday: user.loginCountWithoutBirthday,
+    accessible_squads: user.accessibleSquads || [],
     reports_to: user.reportsTo,
     direct_reports: user.directReports,
     job_title: user.jobTitle,
@@ -160,16 +171,57 @@ export const SupabaseUserRepository: IUserRepository = {
   },
 
   async create(user: User, _plainPassword?: string): Promise<User> {
-    const { data, error } = await getSupabaseClient()
-      .from('profiles')
-      .insert({
-        ...userToRow(user),
-        id: user.id,
-      })
-      .select()
-      .single();
-    if (error) throw error;
-    const created = rowToUser(data);
+    const client = getSupabaseClient();
+
+    // Get the caller's JWT for the Edge Function
+    const { data: { session } } = await client.auth.getSession();
+    if (!session?.access_token) {
+      throw new Error('No active session — cannot create user via Edge Function');
+    }
+
+    // Call the Edge Function which:
+    // 1. Verifies the caller's JWT (defense-in-depth with --verify-jwt)
+    // 2. Checks caller role (superadmin/admin only)
+    // 3. Generates a password server-side with crypto.getRandomValues()
+    // 4. Creates auth user via auth.admin.createUser() (email_confirm: true)
+    // 5. Updates the profile row (auto-created by on_auth_user_created trigger)
+    // 6. Returns { user, password }
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const response = await fetch(`${supabaseUrl}/functions/v1/create-user`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY as string,
+      },
+      body: JSON.stringify({
+        username: user.username,
+        email: user.email || '',
+        employee_id: user.employeeId || null,
+        role: user.role,
+        squad_id: user.squadId || null,
+        project_id: user.projectId || null,
+        reports_to: user.reportsTo || null,
+        job_title: user.jobTitle || null,
+        base_office: user.baseOffice || 'Bengaluru',
+        birthday: user.birthday || null,
+        permissions: user.permissions || null,
+        accessible_squads: user.accessibleSquads || [],
+        direct_reports: user.directReports || [],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(errorBody.error || `Edge Function failed with status ${response.status}`);
+    }
+
+    const { user: profileRow, password } = await response.json();
+
+    // Store the generated password for one-time retrieval via popGeneratedPassword()
+    _generatedPassword = password;
+
+    const created = rowToUser(profileRow);
     if (!created.permissions) {
       created.permissions = getPermissionsForRole(created.role);
     }

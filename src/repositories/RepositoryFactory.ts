@@ -258,4 +258,13 @@ export const RepositoryFactory = {
     }
     return LocalDefectRepository as IDefectRepository;
   },
+
+  /** Pop the one-time generated password from the Supabase user repo (or null for localStorage). */
+  async popGeneratedPassword(): Promise<string | null> {
+    if (isSupabaseConfigured()) {
+      const { popGeneratedPassword } = await import('@/repositories/supabase/UserRepository');
+      return popGeneratedPassword();
+    }
+    return null;
+  },
 };

@@ -53,16 +53,22 @@ async function fetchWorkingDays(timesheetId: string): Promise<WorkingDay[]> {
 
 async function replaceWorkingDays(timesheetId: string, days: WorkingDay[]): Promise<void> {
   const client = getSupabaseClient();
+
+  // First delete existing rows for this timesheet
   const { error: delError } = await client
     .from('working_days')
     .delete()
     .eq('timesheet_id', timesheetId);
   if (delError) throw delError;
 
+  // Then upsert all rows — upsert is idempotent on (timesheet_id, date),
+  // so even if the delete above failed silently due to RLS, this won't 409.
   if (days.length > 0) {
     const rows = days.map(d => workingDayToRow(d, timesheetId));
-    const { error: insError } = await client.from('working_days').insert(rows);
-    if (insError) throw insError;
+    const { error: upsertError } = await client
+      .from('working_days')
+      .upsert(rows, { onConflict: 'timesheet_id,date' });
+    if (upsertError) throw upsertError;
   }
 }
 

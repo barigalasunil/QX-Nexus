@@ -1,11 +1,12 @@
 import { ProjectService } from "@/services/project.service";
-import { SquadRepository } from "@/repositories/squad/SquadRepository";
+import { RepositoryFactory } from "@/repositories/RepositoryFactory";
 import { Squad } from "@/types";
 
 class SquadServiceImpl {
   async fetchSquads(): Promise<Squad[]> {
     try {
-      return await SquadRepository.fetchSquads();
+      const repo = await RepositoryFactory.getSquadRepository();
+      return await repo.fetchSquads();
     } catch {
       throw new Error("Unable to load squads.");
     }
@@ -22,7 +23,9 @@ class SquadServiceImpl {
     this.validateCreateInput(trimmedProjectId, trimmedSquadName);
 
     try {
-      const isNameExists = await SquadRepository.isSquadNameExists(
+      const repo = await RepositoryFactory.getSquadRepository();
+
+      const isNameExists = await repo.isSquadNameExists(
         trimmedProjectId,
         trimmedSquadName
       );
@@ -33,7 +36,7 @@ class SquadServiceImpl {
 
       const projectCode = await this.getProjectCode(trimmedProjectId);
 
-      return await SquadRepository.createSquad({
+      return await repo.createSquad({
         project_id: trimmedProjectId,
         projectId: trimmedProjectId,
         squad_code: this.generateSquadCode(projectCode, trimmedSquadName),
@@ -55,7 +58,8 @@ class SquadServiceImpl {
 
   async deleteSquad(id: string): Promise<void> {
     try {
-      await SquadRepository.deleteSquad(id);
+      const repo = await RepositoryFactory.getSquadRepository();
+      await repo.deleteSquad(id);
     } catch {
       throw new Error("Unable to delete squad.");
     }

@@ -3,10 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// UserService: single access point for all user operations backed by localStorage.
+// UserService: single access point for all user operations.
+// Routes through RepositoryFactory (Supabase or localStorage).
 // Provides both synchronous (cache) and async (refresh) access.
 
-import { UserRepository } from '@/repositories/user';
+import { RepositoryFactory } from '@/repositories/RepositoryFactory';
 import { User, UserPermissions } from '@/types';
 import { authorize, UserOperation } from '@/utils/authorization';
 
@@ -23,10 +24,12 @@ function notifyListeners(): void {
 
 async function fetchAll(): Promise<User[]> {
   if (_loadingPromise) return _loadingPromise;
-  _loadingPromise = UserRepository.getAll().finally(() => { _loadingPromise = null; });
+  _loadingPromise = (async () => {
+    const repo = await RepositoryFactory.getUserRepository();
+    return repo.getAll();
+  })().finally(() => { _loadingPromise = null; });
   _cache = await _loadingPromise;
   notifyListeners();
-  console.log("Service received", _cache.length);
   return _cache;
 }
 
@@ -39,7 +42,7 @@ export const UserService = {
     };
   },
 
-  /** Returns cached users, fetching from localStorage on first call. */
+  /** Returns cached users, fetching from repository on first call. */
   async getUsers(): Promise<User[]> {
     if (_cache.length > 0) return _cache;
     return fetchAll();
@@ -50,7 +53,7 @@ export const UserService = {
     return _cache;
   },
 
-  /** Force-refresh the cache from localStorage. */
+  /** Force-refresh the cache from repository. */
   async refresh(): Promise<User[]> {
     return fetchAll();
   },
@@ -75,35 +78,38 @@ export const UserService = {
     return _cache.filter(u => u.reportsTo === managerId);
   },
 
-  /** Create a user in localStorage and refresh the cache. */
+  /** Create a user and refresh the cache. */
   async createUser(caller: User, user: User, plainPassword?: string): Promise<User> {
     if (!authorize(caller, 'create', null, user.role)) {
       throw new Error(`Unauthorized: ${caller.role} cannot create users with role ${user.role}`);
     }
-    const created = await UserRepository.create(user, plainPassword);
+    const repo = await RepositoryFactory.getUserRepository();
+    const created = await repo.create(user, plainPassword);
     await fetchAll();
     return created;
   },
 
-  /** Update a user in localStorage and refresh the cache. */
+  /** Update a user and refresh the cache. */
   async updateUser(caller: User, user: User): Promise<User> {
     const existing = _cache.find(u => u.id === user.id);
     if (!authorize(caller, 'edit', existing ?? user)) {
       throw new Error(`Unauthorized: ${caller.role} cannot edit user ${user.id}`);
     }
-    const updated = await UserRepository.update(user);
+    const repo = await RepositoryFactory.getUserRepository();
+    const updated = await repo.update(user);
     await fetchAll();
     return updated;
   },
 
-  /** Delete a user from localStorage and refresh the cache. */
+  /** Delete a user and refresh the cache. */
   async deleteUser(caller: User, id: string): Promise<void> {
     const target = _cache.find(u => u.id === id);
     if (!target) throw new Error('User not found');
     if (!authorize(caller, 'delete', target)) {
       throw new Error(`Unauthorized: ${caller.role} cannot delete user ${id}`);
     }
-    await UserRepository.delete(id);
+    const repo = await RepositoryFactory.getUserRepository();
+    await repo.delete(id);
     await fetchAll();
   },
 
@@ -114,7 +120,8 @@ export const UserService = {
     if (!authorize(caller, 'editPermissions', target)) {
       throw new Error(`Unauthorized: ${caller.role} cannot edit permissions for user ${userId}`);
     }
-    const updated = await UserRepository.updatePermissions(userId, permissions);
+    const repo = await RepositoryFactory.getUserRepository();
+    const updated = await repo.updatePermissions(userId, permissions);
     if (updated) await fetchAll();
     return updated;
   },
@@ -126,7 +133,8 @@ export const UserService = {
     if (!authorize(caller, 'changeReportingManager', target)) {
       throw new Error(`Unauthorized: ${caller.role} cannot change reporting manager for user ${userId}`);
     }
-    const updated = await UserRepository.updateReportingManager(userId, managerId);
+    const repo = await RepositoryFactory.getUserRepository();
+    const updated = await repo.updateReportingManager(userId, managerId);
     if (updated) await fetchAll();
     return updated;
   },
@@ -138,7 +146,8 @@ export const UserService = {
     if (!authorize(caller, 'promote', target)) {
       throw new Error(`Unauthorized: ${caller.role} cannot promote user ${userId}`);
     }
-    const updated = await UserRepository.promote(userId);
+    const repo = await RepositoryFactory.getUserRepository();
+    const updated = await repo.promote(userId);
     if (updated) await fetchAll();
     return updated;
   },
@@ -150,7 +159,8 @@ export const UserService = {
     if (!authorize(caller, 'demote', target)) {
       throw new Error(`Unauthorized: ${caller.role} cannot demote user ${userId}`);
     }
-    const updated = await UserRepository.demote(userId);
+    const repo = await RepositoryFactory.getUserRepository();
+    const updated = await repo.demote(userId);
     if (updated) await fetchAll();
     return updated;
   },
@@ -162,7 +172,8 @@ export const UserService = {
     if (!authorize(caller, 'resetPassword', target)) {
       throw new Error(`Unauthorized: ${caller.role} cannot reset password for user ${userId}`);
     }
-    const updated = await UserRepository.resetPassword(userId, '');
+    const repo = await RepositoryFactory.getUserRepository();
+    const updated = await repo.resetPassword(userId, '');
     if (updated) await fetchAll();
     return updated;
   },
@@ -174,8 +185,14 @@ export const UserService = {
     if (!authorize(caller, 'changeBaseOffice', target)) {
       throw new Error(`Unauthorized: ${caller.role} cannot change base office for user ${userId}`);
     }
-    const updated = await UserRepository.updateBaseOffice(userId, office);
+    const repo = await RepositoryFactory.getUserRepository();
+    const updated = await repo.updateBaseOffice(userId, office);
     if (updated) await fetchAll();
     return updated;
+  },
+
+  /** Pop the one-time generated password from the Supabase Edge Function response (null for localStorage). */
+  async popGeneratedPassword(): Promise<string | null> {
+    return RepositoryFactory.popGeneratedPassword();
   },
 };

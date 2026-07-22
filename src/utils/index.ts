@@ -132,7 +132,7 @@ export const scopeAppStateForUser = (state: AppState, user: User): AppState => {
 };
 
 export const generateId = (): string => {
-  return Math.random().toString(36).substring(2, 11);
+  return crypto.randomUUID?.() ?? Math.random().toString(36).substring(2, 11);
 };
 
 export const formatDate = (str: string): string => {

@@ -1,9 +1,10 @@
-import { ProjectRepository } from "@/repositories/project/ProjectRepository";
+import { RepositoryFactory } from "@/repositories/RepositoryFactory";
 import { Project } from "@/types";
 
 class ProjectServiceImpl {
   async fetchProjects(): Promise<Project[]> {
-    return ProjectRepository.fetchProjects();
+    const repo = await RepositoryFactory.getProjectRepository();
+    return repo.fetchProjects();
   }
 
   async getProjects(): Promise<Project[]> {
@@ -18,23 +19,21 @@ class ProjectServiceImpl {
     }
 
     const projectCode = this.generateProjectCode(trimmedProjectName);
+    const repo = await RepositoryFactory.getProjectRepository();
 
-    const isNameExists =
-      await ProjectRepository.isProjectNameExists(trimmedProjectName);
+    const isNameExists = await repo.isProjectNameExists(trimmedProjectName);
 
     if (isNameExists) {
       throw new Error("Project name already exists.");
     }
 
-    const isCodeExists = await ProjectRepository.isProjectCodeExists(
-      projectCode
-    );
+    const isCodeExists = await repo.isProjectCodeExists(projectCode);
 
     if (isCodeExists) {
       throw new Error("Project code already exists.");
     }
 
-    return ProjectRepository.createProject({
+    return repo.createProject({
       project_code: projectCode,
       project_name: trimmedProjectName,
       name: trimmedProjectName,
@@ -45,11 +44,13 @@ class ProjectServiceImpl {
   }
 
   async updateProject(id: string, project: Partial<Project>): Promise<Project> {
-    return ProjectRepository.updateProject(id, project);
+    const repo = await RepositoryFactory.getProjectRepository();
+    return repo.updateProject(id, project);
   }
 
   async deleteProject(id: string): Promise<void> {
-    return ProjectRepository.deleteProject(id);
+    const repo = await RepositoryFactory.getProjectRepository();
+    return repo.deleteProject(id);
   }
 
   private generateProjectCode(projectName: string): string {
